@@ -17,7 +17,7 @@ from app.repositories.legal import LegalRepository
 from app.repositories.user import UserRepository
 from app.schemas.legal import CourtDecisionCreate, LegalCaseCreate, LegalObligationCreate
 from app.services.audit import AuditService
-from app.services.deadlines import DeadlineState, deadline_state
+from app.services.deadlines import DeadlineState, deadline_state, overdue_days
 
 
 class LegalConflictError(Exception):
@@ -150,6 +150,32 @@ class LegalService:
             for item in await self.list_obligations(tenant_id)
             if deadline_state(item.due_date, item.status, today) == DeadlineState.OVERDUE
         ]
+
+    async def dashboard(self, tenant_id: uuid.UUID, today: date) -> dict[str, int]:
+        items = await self.list_obligations(tenant_id)
+        overdue = [
+            item
+            for item in items
+            if deadline_state(item.due_date, item.status, today) == DeadlineState.OVERDUE
+        ]
+        due_soon = [
+            item
+            for item in items
+            if item.due_date
+            and 0 <= (item.due_date - today).days <= 7
+            and deadline_state(item.due_date, item.status, today) != DeadlineState.NONE
+        ]
+        return {
+            "open_obligations": sum(
+                item.status not in {ObligationStatus.COMPLETED, ObligationStatus.CANCELLED}
+                for item in items
+            ),
+            "overdue_obligations": len(overdue),
+            "due_within_seven_days": len(due_soon),
+            "overdue_days_total": sum(
+                overdue_days(item.due_date, item.status, today) for item in overdue
+            ),
+        }
 
     async def change_status(
         self,

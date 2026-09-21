@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.core.security import AuthenticatedUser, SessionDependency, require_permission
+from app.schemas.dashboard import LegalDashboardResponse
 from app.schemas.legal import (
     CourtDecisionCreate,
     CourtDecisionResponse,
@@ -23,6 +24,13 @@ from app.services.legal import (
 
 router = APIRouter(prefix="/legal")
 LegalManager = Annotated[AuthenticatedUser, Depends(require_permission("legal.manage"))]
+
+
+@router.get("/dashboard", response_model=LegalDashboardResponse)
+async def dashboard(user: LegalManager, session: SessionDependency) -> LegalDashboardResponse:
+    return LegalDashboardResponse(
+        **await LegalService(session).dashboard(user.tenant_id, date.today())
+    )
 
 
 def service_error(exc: Exception) -> HTTPException:
