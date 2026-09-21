@@ -3,7 +3,13 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.legal import CourtDecision, LegalCase, LegalObligation
+from app.models.legal import (
+    CourtDecision,
+    EnforcementProceeding,
+    LegalCase,
+    LegalObligation,
+    PenaltyRule,
+)
 
 
 class LegalRepository:
@@ -32,6 +38,23 @@ class LegalRepository:
         )
         return item
 
+    async def enforcement(
+        self, item_id: uuid.UUID, tenant_id: uuid.UUID
+    ) -> EnforcementProceeding | None:
+        item: EnforcementProceeding | None = await self.session.scalar(
+            select(EnforcementProceeding).where(
+                EnforcementProceeding.id == item_id,
+                EnforcementProceeding.tenant_id == tenant_id,
+            )
+        )
+        return item
+
+    async def penalty_rule(self, item_id: uuid.UUID, tenant_id: uuid.UUID) -> PenaltyRule | None:
+        item: PenaltyRule | None = await self.session.scalar(
+            select(PenaltyRule).where(PenaltyRule.id == item_id, PenaltyRule.tenant_id == tenant_id)
+        )
+        return item
+
     async def cases(self, tenant_id: uuid.UUID) -> list[LegalCase]:
         return list(
             await self.session.scalars(
@@ -47,5 +70,23 @@ class LegalRepository:
                 select(LegalObligation)
                 .where(LegalObligation.tenant_id == tenant_id)
                 .order_by(LegalObligation.due_date, LegalObligation.id)
+            )
+        )
+
+    async def enforcements(self, tenant_id: uuid.UUID) -> list[EnforcementProceeding]:
+        return list(
+            await self.session.scalars(
+                select(EnforcementProceeding)
+                .where(EnforcementProceeding.tenant_id == tenant_id)
+                .order_by(EnforcementProceeding.start_date.desc())
+            )
+        )
+
+    async def penalty_rules(self, tenant_id: uuid.UUID) -> list[PenaltyRule]:
+        return list(
+            await self.session.scalars(
+                select(PenaltyRule)
+                .where(PenaltyRule.tenant_id == tenant_id)
+                .order_by(PenaltyRule.start_date.desc(), PenaltyRule.id)
             )
         )

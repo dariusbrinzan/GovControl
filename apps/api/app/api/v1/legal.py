@@ -9,11 +9,16 @@ from app.schemas.dashboard import LegalDashboardResponse
 from app.schemas.legal import (
     CourtDecisionCreate,
     CourtDecisionResponse,
+    EnforcementProceedingCreate,
+    EnforcementProceedingResponse,
     LegalCaseCreate,
     LegalCaseResponse,
     LegalObligationCreate,
     LegalObligationResponse,
     ObligationStatusChange,
+    PenaltyExposureResponse,
+    PenaltyRuleCreate,
+    PenaltyRuleResponse,
 )
 from app.services.legal import (
     InvalidStatusTransitionError,
@@ -39,6 +44,67 @@ def service_error(exc: Exception) -> HTTPException:
     if isinstance(exc, LegalResourceNotFoundError):
         return HTTPException(404, "The requested legal resource is not available in this tenant.")
     return HTTPException(422, "This obligation status transition is not allowed.")
+
+
+@router.get("/enforcements", response_model=list[EnforcementProceedingResponse])
+async def enforcements(
+    user: LegalManager, session: SessionDependency
+) -> list[EnforcementProceedingResponse]:
+    return [
+        EnforcementProceedingResponse.model_validate(item)
+        for item in await LegalService(session).list_enforcements(user.tenant_id)
+    ]
+
+
+@router.post("/enforcements", response_model=EnforcementProceedingResponse, status_code=201)
+async def create_enforcement(
+    data: EnforcementProceedingCreate, user: LegalManager, session: SessionDependency
+) -> EnforcementProceedingResponse:
+    try:
+        return EnforcementProceedingResponse.model_validate(
+            await LegalService(session).create_enforcement(user.tenant_id, user.id, data)
+        )
+    except (LegalConflictError, LegalResourceNotFoundError) as exc:
+        raise service_error(exc) from exc
+
+
+@router.get("/penalties/rules", response_model=list[PenaltyRuleResponse])
+async def penalty_rules(
+    user: LegalManager, session: SessionDependency
+) -> list[PenaltyRuleResponse]:
+    return [
+        PenaltyRuleResponse.model_validate(item)
+        for item in await LegalService(session).list_penalty_rules(user.tenant_id)
+    ]
+
+
+@router.post("/penalties/rules", response_model=PenaltyRuleResponse, status_code=201)
+async def create_penalty_rule(
+    data: PenaltyRuleCreate, user: LegalManager, session: SessionDependency
+) -> PenaltyRuleResponse:
+    try:
+        return PenaltyRuleResponse.model_validate(
+            await LegalService(session).create_penalty_rule(user.tenant_id, user.id, data)
+        )
+    except (LegalConflictError, LegalResourceNotFoundError) as exc:
+        raise service_error(exc) from exc
+
+
+@router.get("/penalties/rules/{rule_id}/exposure", response_model=PenaltyExposureResponse)
+async def penalty_exposure(
+    rule_id: uuid.UUID,
+    user: LegalManager,
+    session: SessionDependency,
+    as_of_date: date | None = None,
+) -> PenaltyExposureResponse:
+    effective_date = as_of_date or date.today()
+    try:
+        rule, amount = await LegalService(session).penalty_exposure(
+            user.tenant_id, rule_id, effective_date
+        )
+    except LegalResourceNotFoundError as exc:
+        raise service_error(exc) from exc
+    return PenaltyExposureResponse(rule_id=rule.id, as_of_date=effective_date, amount=amount)
 
 
 @router.get("/cases", response_model=list[LegalCaseResponse])

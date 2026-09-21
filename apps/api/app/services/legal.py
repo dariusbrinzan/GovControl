@@ -1,5 +1,6 @@
 import uuid
 from datetime import date
+from decimal import Decimal
 from typing import cast
 
 from sqlalchemy.exc import IntegrityError
@@ -7,17 +8,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.legal import (
     CourtDecision,
+    EnforcementProceeding,
     LegalCase,
     LegalObligation,
     ObligationStatus,
     ObligationStatusHistory,
+    PenaltyRule,
 )
 from app.repositories.department import DepartmentRepository
 from app.repositories.legal import LegalRepository
 from app.repositories.user import UserRepository
-from app.schemas.legal import CourtDecisionCreate, LegalCaseCreate, LegalObligationCreate
+from app.schemas.legal import (
+    CourtDecisionCreate,
+    EnforcementProceedingCreate,
+    LegalCaseCreate,
+    LegalObligationCreate,
+    PenaltyRuleCreate,
+)
 from app.services.audit import AuditService
 from app.services.deadlines import DeadlineState, deadline_state, overdue_days
+from app.services.penalties import calculate_penalty_exposure
 
 
 class LegalConflictError(Exception):
@@ -84,6 +94,69 @@ class LegalService:
 
     async def list_cases(self, tenant_id: uuid.UUID) -> list[LegalCase]:
         return await self.repo.cases(tenant_id)
+
+    async def create_enforcement(
+        self, tenant_id: uuid.UUID, actor_id: uuid.UUID, data: EnforcementProceedingCreate
+    ) -> EnforcementProceeding:
+        if await self.repo.obligation(data.obligation_id, tenant_id) is None:
+            raise LegalResourceNotFoundError
+        item = EnforcementProceeding(tenant_id=tenant_id, **data.model_dump())
+        self.session.add(item)
+        return cast(
+            EnforcementProceeding,
+            await self._save_created(
+                item,
+                tenant_id,
+                actor_id,
+                "EnforcementProceeding",
+                {"file_number": item.file_number},
+            ),
+        )
+
+    async def list_enforcements(self, tenant_id: uuid.UUID) -> list[EnforcementProceeding]:
+        return await self.repo.enforcements(tenant_id)
+
+    async def create_penalty_rule(
+        self, tenant_id: uuid.UUID, actor_id: uuid.UUID, data: PenaltyRuleCreate
+    ) -> PenaltyRule:
+        if await self.repo.obligation(data.obligation_id, tenant_id) is None:
+            raise LegalResourceNotFoundError
+        values = data.model_dump()
+        calculate_penalty_exposure(as_of_date=data.start_date, **values)
+        item = PenaltyRule(tenant_id=tenant_id, **values)
+        self.session.add(item)
+        return cast(
+            PenaltyRule,
+            await self._save_created(
+                item,
+                tenant_id,
+                actor_id,
+                "PenaltyRule",
+                {"calculation_type": item.calculation_type, "start_date": str(item.start_date)},
+            ),
+        )
+
+    async def list_penalty_rules(self, tenant_id: uuid.UUID) -> list[PenaltyRule]:
+        return await self.repo.penalty_rules(tenant_id)
+
+    async def penalty_exposure(
+        self, tenant_id: uuid.UUID, rule_id: uuid.UUID, as_of_date: date
+    ) -> tuple[PenaltyRule, Decimal]:
+        item = await self.repo.penalty_rule(rule_id, tenant_id)
+        if item is None:
+            raise LegalResourceNotFoundError
+        return (
+            item,
+            calculate_penalty_exposure(
+                calculation_type=item.calculation_type,
+                start_date=item.start_date,
+                as_of_date=as_of_date,
+                daily_amount=item.daily_amount,
+                percentage=item.percentage,
+                base_value=item.base_value,
+                end_date=item.end_date,
+            ),
+        )
 
     async def create_decision(
         self,
@@ -215,12 +288,12 @@ class LegalService:
 
     async def _save_created(
         self,
-        item: LegalCase | CourtDecision | LegalObligation,
+        item: LegalCase | CourtDecision | LegalObligation | EnforcementProceeding | PenaltyRule,
         tenant_id: uuid.UUID,
         actor_id: uuid.UUID,
         entity_type: str,
         value: dict[str, str | None],
-    ) -> LegalCase | CourtDecision | LegalObligation:
+    ) -> LegalCase | CourtDecision | LegalObligation | EnforcementProceeding | PenaltyRule:
         try:
             await self.session.flush()
             self.audit.record_created(

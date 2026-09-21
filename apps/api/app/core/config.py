@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     dev_auth_enabled: bool = False
     dev_auth_token: SecretStr | None = None
     dev_auth_email: str | None = None
+    document_storage_path: Path = PROJECT_ROOT / "data" / "documents"
+    max_document_size_bytes: int = 10 * 1024 * 1024
 
 
 @lru_cache
