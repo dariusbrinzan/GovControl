@@ -67,3 +67,12 @@ curl -H "Authorization: Bearer $DEV_AUTH_TOKEN" http://127.0.0.1:8000/api/v1/aut
 
 The endpoint derives the tenant from the authenticated user. It never accepts a
 client-provided tenant identifier as authorization context.
+
+## Initial platform endpoints
+
+All endpoints below require the development bearer token and the `platform.manage`
+permission. They only expose records in the authenticated user's tenant:
+
+- `GET /api/v1/platform/tenant`
+- `GET, POST /api/v1/platform/departments`
+- `GET /api/v1/platform/roles`
