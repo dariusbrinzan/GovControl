@@ -27,7 +27,7 @@ from app.schemas.legal import (
 )
 from app.services.audit import AuditService
 from app.services.deadlines import DeadlineState, deadline_state, overdue_days
-from app.services.penalties import calculate_penalty_exposure
+from app.services.penalties import PenaltyCalculationType, calculate_penalty_exposure
 
 
 class LegalConflictError(Exception):
@@ -148,7 +148,7 @@ class LegalService:
         return (
             item,
             calculate_penalty_exposure(
-                calculation_type=item.calculation_type,
+                calculation_type=PenaltyCalculationType(item.calculation_type),
                 start_date=item.start_date,
                 as_of_date=as_of_date,
                 daily_amount=item.daily_amount,

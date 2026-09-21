@@ -25,7 +25,9 @@ class DocumentRepository:
             )
         )
 
-    async def get_by_id_for_tenant(self, document_id: uuid.UUID, tenant_id: uuid.UUID) -> Document | None:
+    async def get_by_id_for_tenant(
+        self, document_id: uuid.UUID, tenant_id: uuid.UUID
+    ) -> Document | None:
         item: Document | None = await self.session.scalar(
             select(Document).where(Document.id == document_id, Document.tenant_id == tenant_id)
         )

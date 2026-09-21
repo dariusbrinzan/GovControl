@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     dev_auth_email: str | None = None
     document_storage_path: Path = PROJECT_ROOT / "data" / "documents"
     max_document_size_bytes: int = 10 * 1024 * 1024
+    cors_allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
 
 
 @lru_cache

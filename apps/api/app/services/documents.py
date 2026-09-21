@@ -79,7 +79,9 @@ class DocumentService:
         await self._ensure_entity_exists(tenant_id, entity_type, entity_id)
         return await self.repo.list_for_entity(tenant_id, entity_type, entity_id)
 
-    async def download_path(self, tenant_id: uuid.UUID, document_id: uuid.UUID) -> tuple[Document, str]:
+    async def download_path(
+        self, tenant_id: uuid.UUID, document_id: uuid.UUID
+    ) -> tuple[Document, str]:
         document = await self.repo.get_by_id_for_tenant(document_id, tenant_id)
         if document is None:
             raise DocumentResourceNotFoundError
@@ -91,14 +93,13 @@ class DocumentService:
     async def _ensure_entity_exists(
         self, tenant_id: uuid.UUID, entity_type: DocumentEntityType, entity_id: uuid.UUID
     ) -> None:
-        match entity_type:
-            case DocumentEntityType.LEGAL_CASE:
-                item = await self.legal.case(entity_id, tenant_id)
-            case DocumentEntityType.COURT_DECISION:
-                item = await self.legal.decision(entity_id, tenant_id)
-            case DocumentEntityType.LEGAL_OBLIGATION:
-                item = await self.legal.obligation(entity_id, tenant_id)
-            case DocumentEntityType.ENFORCEMENT_PROCEEDING:
-                item = await self.legal.enforcement(entity_id, tenant_id)
-        if item is None:
+        if entity_type == DocumentEntityType.LEGAL_CASE:
+            exists = await self.legal.case(entity_id, tenant_id) is not None
+        elif entity_type == DocumentEntityType.COURT_DECISION:
+            exists = await self.legal.decision(entity_id, tenant_id) is not None
+        elif entity_type == DocumentEntityType.LEGAL_OBLIGATION:
+            exists = await self.legal.obligation(entity_id, tenant_id) is not None
+        else:
+            exists = await self.legal.enforcement(entity_id, tenant_id) is not None
+        if not exists:
             raise DocumentResourceNotFoundError

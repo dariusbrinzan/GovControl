@@ -4,8 +4,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 
-from app.core.config import SettingsDependency
-from app.core.security import AuthenticatedUser, SessionDependency, require_permission
+from app.core.security import (
+    AuthenticatedUser,
+    SessionDependency,
+    SettingsDependency,
+    require_permission,
+)
 from app.schemas.document import DocumentEntityType, DocumentResponse
 from app.services.documents import (
     DocumentResourceNotFoundError,
@@ -27,7 +31,9 @@ DocumentServiceDependency = Annotated[DocumentService, Depends(document_service)
 
 def document_error(exc: Exception) -> HTTPException:
     if isinstance(exc, DocumentResourceNotFoundError):
-        return HTTPException(status.HTTP_404_NOT_FOUND, "The requested document resource was not found.")
+        return HTTPException(
+            status.HTTP_404_NOT_FOUND, "The requested document resource was not found."
+        )
     return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Document storage is unavailable.")
 
 
@@ -59,7 +65,9 @@ async def upload_document(
 ) -> DocumentResponse:
     content = await file.read(settings.max_document_size_bytes + 1)
     if len(content) > settings.max_document_size_bytes:
-        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Document exceeds the size limit.")
+        raise HTTPException(
+            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Document exceeds the size limit."
+        )
     filename = file.filename or "unnamed"
     try:
         document = await service.upload(
