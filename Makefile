@@ -1,4 +1,4 @@
-.PHONY: api-check api-dev api-test db-migrate db-up db-down db-logs db-seed db-status
+.PHONY: api-check api-dev api-test db-migrate db-up db-down db-logs db-seed db-status web-build web-dev
 
 api-dev:
 	cd apps/api && uv run uvicorn app.main:app --reload
@@ -8,6 +8,12 @@ api-test:
 
 api-check:
 	cd apps/api && uv run ruff check . && uv run mypy app
+
+web-dev:
+	cd apps/web && npm run dev
+
+web-build:
+	cd apps/web && npm run build
 
 db-migrate:
 	cd apps/api && uv run alembic upgrade head

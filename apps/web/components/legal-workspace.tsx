@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   apiGet,
   type AuditEvent,
+  type AuditEventPage,
   type EnforcementProceeding,
   type LegalCase,
   type LegalDashboard,
@@ -63,11 +64,19 @@ export default function LegalWorkspace({ view }: LegalWorkspaceProps) {
         apiGet<LegalCase[]>("/legal/cases", token),
         apiGet<EnforcementProceeding[]>("/legal/enforcements", token),
         apiGet<PenaltyRule[]>("/legal/penalties/rules", token),
-        apiGet<AuditEvent[]>("/audit/events", token),
+        apiGet<AuditEventPage>("/audit/events", token),
         apiGet<Notification[]>("/notifications", token),
       ]);
       window.localStorage.setItem(tokenStorageKey, token);
-      setData({ dashboard, obligations, cases, enforcements, penaltyRules, auditEvents, notifications });
+      setData({
+        dashboard,
+        obligations,
+        cases,
+        enforcements,
+        penaltyRules,
+        auditEvents: auditEvents.items,
+        notifications,
+      });
     } catch (loadError) {
       setData(null);
       setError(loadError instanceof Error ? loadError.message : "Nu am putut încărca datele.");
@@ -145,7 +154,7 @@ export default function LegalWorkspace({ view }: LegalWorkspaceProps) {
           </section>
 
           {view === "dashboard" ? <section className="panel audit-panel"><div className="panel-heading"><div><h2>Activitate recentă</h2><p>Jurnalul de audit al tenantului</p></div></div>
-            {data.auditEvents.length ? <ul className="audit-list">{data.auditEvents.slice(0, 6).map((event) => <li key={event.id}><strong>{event.action}</strong><span>{event.entity_type}</span><time>{new Intl.DateTimeFormat("ro-RO", { dateStyle: "medium", timeStyle: "short" }).format(new Date(event.timestamp))}</time></li>)}</ul> : <p className="empty-state">Nu există evenimente de audit încă.</p>}
+            {data.auditEvents.length ? <ul className="audit-list">{data.auditEvents.slice(0, 6).map((event) => <li key={event.id}><strong>{event.action}</strong><span>{event.entity_type}</span><time>{new Intl.DateTimeFormat("ro-RO", { dateStyle: "medium", timeStyle: "short" }).format(new Date(event.created_at))}</time></li>)}</ul> : <p className="empty-state">Nu există evenimente de audit încă.</p>}
           </section> : null}
         </>
       ) : !error && !loading ? <p className="notice">Introdu tokenul local pentru a vedea datele operaționale.</p> : null}

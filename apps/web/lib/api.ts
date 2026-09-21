@@ -43,8 +43,10 @@ export type AuditEvent = {
   action: string;
   entity_type: string;
   entity_id: string;
-  timestamp: string;
+  created_at: string;
 };
+
+export type AuditEventPage = { items: AuditEvent[]; limit: number; offset: number };
 
 export type Notification = {
   id: string;

@@ -2,14 +2,25 @@ services:
   api:
     build: ./apps/api
     environment:
+      APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
+      DEV_AUTH_ENABLED: ${DEV_AUTH_ENABLED:-false}
+      DEV_AUTH_TOKEN: ${DEV_AUTH_TOKEN:-}
+      DEV_AUTH_EMAIL: ${DEV_AUTH_EMAIL:-}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      DOCUMENT_STORAGE_PATH: /data/documents
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "8000:8000"
+    volumes:
+      - document_data:/data/documents
   web:
-    build: ./apps/web
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
     ports:
       - "3000:3000"
     depends_on:
@@ -35,3 +46,4 @@ services:
 
 volumes:
   postgres_data:
+  document_data:

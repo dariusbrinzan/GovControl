@@ -38,6 +38,20 @@ make api-check
 make api-test
 ```
 
+## Web interface
+
+The Next.js interface provides a GovLegal dashboard and obligations view backed by the local API.
+
+```bash
+cd apps/web
+npm ci
+npm run dev
+```
+
+Open `http://localhost:3000/legal`, then paste the local `DEV_AUTH_TOKEN` from `.env` into
+the connection field. The token is retained only in that browser's local storage. The API permits
+the local web origins by default; override them through `CORS_ALLOWED_ORIGINS` only when needed.
+
 ## Database migrations
 
 Apply the committed Alembic migrations to the local PostgreSQL container with:
@@ -78,3 +92,24 @@ permission. They only expose records in the authenticated user's tenant:
 - `GET /api/v1/platform/roles`
 - `GET, POST /api/v1/platform/users`
 - `PUT /api/v1/platform/users/{user_id}/roles`
+
+## GovLegal endpoints
+
+Users with `legal.manage` can manage legal cases, decisions, obligations, enforcement proceedings,
+penalty rules and documents. All records are filtered by the tenant established by the backend.
+
+- `GET, POST /api/v1/legal/cases`
+- `POST /api/v1/legal/cases/{case_id}/decisions`
+- `GET, POST /api/v1/legal/obligations`; `PATCH /api/v1/legal/obligations/{id}/status`
+- `GET, POST /api/v1/legal/enforcements`
+- `GET, POST /api/v1/legal/penalties/rules`; `GET /api/v1/legal/penalties/rules/{id}/exposure`
+- `GET, POST /api/v1/documents`; `GET /api/v1/documents/{id}/download`
+- `GET /api/v1/notifications`; `PATCH /api/v1/notifications/{id}/read`
+- `POST /api/v1/notifications/dispatch/deadline-reminders`
+- `GET /api/v1/search/legal` and `GET /api/v1/audit/events`
+
+## Containers
+
+`docker compose up --build` starts PostgreSQL, the API and the Next.js interface. Apply migrations
+with `make db-migrate` before using a newly built local environment. PostgreSQL and document content
+use separate named volumes (`postgres_data` and `document_data`).
