@@ -48,3 +48,22 @@ make db-migrate
 
 Schema changes must be made through a new Alembic migration; do not modify the
 database structure manually.
+
+## Local development authentication
+
+Development authentication is deliberately restricted to `APP_ENV=development`.
+Set a long local `DEV_AUTH_TOKEN` in `.env`, then create the local demo tenant and
+administrator once:
+
+```bash
+make db-seed
+```
+
+With `make api-dev` running, inspect the backend-established tenant context:
+
+```bash
+curl -H "Authorization: Bearer $DEV_AUTH_TOKEN" http://127.0.0.1:8000/api/v1/auth/me
+```
+
+The endpoint derives the tenant from the authenticated user. It never accepts a
+client-provided tenant identifier as authorization context.

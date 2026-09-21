@@ -1,4 +1,4 @@
-.PHONY: api-check api-dev api-test db-migrate db-up db-down db-logs db-status
+.PHONY: api-check api-dev api-test db-migrate db-up db-down db-logs db-seed db-status
 
 api-dev:
 	cd apps/api && uv run uvicorn app.main:app --reload
@@ -11,6 +11,9 @@ api-check:
 
 db-migrate:
 	cd apps/api && uv run alembic upgrade head
+
+db-seed:
+	cd apps/api && uv run python -m app.scripts.seed_development_data
 
 db-up:
 	docker compose up -d postgres
