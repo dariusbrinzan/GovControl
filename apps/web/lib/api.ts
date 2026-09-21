@@ -71,3 +71,16 @@ export async function apiGet<T>(path: string, token: string): Promise<T> {
   }
   return response.json() as Promise<T>;
 }
+
+export async function apiPatch<T>(path: string, token: string, body: unknown): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.detail ?? `API request failed (${response.status})`);
+  }
+  return response.json() as Promise<T>;
+}

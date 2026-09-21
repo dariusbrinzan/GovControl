@@ -95,6 +95,13 @@ class LegalService:
     async def list_cases(self, tenant_id: uuid.UUID) -> list[LegalCase]:
         return await self.repo.cases(tenant_id)
 
+    async def list_decisions(
+        self, tenant_id: uuid.UUID, case_id: uuid.UUID | None = None
+    ) -> list[CourtDecision]:
+        if case_id is not None and await self.repo.case(case_id, tenant_id) is None:
+            raise LegalResourceNotFoundError
+        return await self.repo.decisions(tenant_id, case_id)
+
     async def create_enforcement(
         self, tenant_id: uuid.UUID, actor_id: uuid.UUID, data: EnforcementProceedingCreate
     ) -> EnforcementProceeding:

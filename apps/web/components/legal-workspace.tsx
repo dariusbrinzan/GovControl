@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   apiGet,
+  apiPatch,
   type AuditEvent,
   type AuditEventPage,
   type EnforcementProceeding,
@@ -29,6 +30,16 @@ type LegalWorkspaceProps = { view: "dashboard" | "obligations" };
 
 const tokenStorageKey = "govcontrol.dev-token";
 
+const allowedStatuses: Record<string, string[]> = {
+  DRAFT: ["OPEN", "CANCELLED"],
+  OPEN: ["IN_PROGRESS", "AT_RISK", "OVERDUE", "CANCELLED"],
+  IN_PROGRESS: ["AT_RISK", "OVERDUE", "COMPLETED", "CANCELLED"],
+  AT_RISK: ["IN_PROGRESS", "OVERDUE", "COMPLETED", "CANCELLED"],
+  OVERDUE: ["IN_PROGRESS", "COMPLETED", "CANCELLED"],
+  COMPLETED: [],
+  CANCELLED: [],
+};
+
 function formatDate(value: string | null): string {
   return value ? new Intl.DateTimeFormat("ro-RO").format(new Date(`${value}T00:00:00`)) : "—";
 }
@@ -47,6 +58,8 @@ export default function LegalWorkspace({ view }: LegalWorkspaceProps) {
   const [data, setData] = useState<WorkspaceData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [readingId, setReadingId] = useState<string | null>(null);
 
   useEffect(() => setToken(window.localStorage.getItem(tokenStorageKey) ?? ""), []);
 
@@ -84,6 +97,32 @@ export default function LegalWorkspace({ view }: LegalWorkspaceProps) {
       setLoading(false);
     }
   }, [token]);
+
+  const changeStatus = async (obligationId: string, status: string) => {
+    setUpdatingId(obligationId);
+    setError(null);
+    try {
+      await apiPatch<LegalObligation>(`/legal/obligations/${obligationId}/status`, token, { status });
+      await loadWorkspace();
+    } catch (updateError) {
+      setError(updateError instanceof Error ? updateError.message : "Statusul nu a putut fi actualizat.");
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const markNotificationRead = async (notificationId: string) => {
+    setReadingId(notificationId);
+    setError(null);
+    try {
+      await apiPatch<Notification>(`/notifications/${notificationId}/read`, token, {});
+      await loadWorkspace();
+    } catch (readError) {
+      setError(readError instanceof Error ? readError.message : "Notificarea nu a putut fi actualizată.");
+    } finally {
+      setReadingId(null);
+    }
+  };
 
   const shownObligations = view === "obligations" ? data?.obligations ?? [] : (data?.obligations ?? []).slice(0, 5);
 
@@ -140,7 +179,7 @@ export default function LegalWorkspace({ view }: LegalWorkspaceProps) {
               </div>
               {shownObligations.length ? (
                 <div className="table-wrap"><table><thead><tr><th>Obligație</th><th>Termen</th><th>Status</th></tr></thead><tbody>
-                  {shownObligations.map((item) => <tr key={item.id}><td><strong>{item.description}</strong><small>{item.obligation_type}</small></td><td className={isOverdue(item) ? "text-danger" : ""}>{formatDate(item.due_date)}</td><td><span className={`status status-${item.status.toLowerCase()}`}>{item.status}</span></td></tr>)}
+                  {shownObligations.map((item) => <tr key={item.id}><td><strong>{item.description}</strong><small>{item.obligation_type}</small></td><td className={isOverdue(item) ? "text-danger" : ""}>{formatDate(item.due_date)}</td><td><span className={`status status-${item.status.toLowerCase()}`}>{item.status}</span>{allowedStatuses[item.status].length ? <select aria-label={`Schimbă statusul obligației ${item.description}`} className="status-select" defaultValue="" disabled={updatingId === item.id} onChange={(event) => { if (event.target.value) void changeStatus(item.id, event.target.value); }}><option value="">Schimbă…</option>{allowedStatuses[item.status].map((status) => <option key={status} value={status}>{status}</option>)}</select> : null}</td></tr>)}
                 </tbody></table></div>
               ) : <p className="empty-state">Nu există încă obligații înregistrate pentru acest tenant.</p>}
             </article>
@@ -155,6 +194,9 @@ export default function LegalWorkspace({ view }: LegalWorkspaceProps) {
 
           {view === "dashboard" ? <section className="panel audit-panel"><div className="panel-heading"><div><h2>Activitate recentă</h2><p>Jurnalul de audit al tenantului</p></div></div>
             {data.auditEvents.length ? <ul className="audit-list">{data.auditEvents.slice(0, 6).map((event) => <li key={event.id}><strong>{event.action}</strong><span>{event.entity_type}</span><time>{new Intl.DateTimeFormat("ro-RO", { dateStyle: "medium", timeStyle: "short" }).format(new Date(event.created_at))}</time></li>)}</ul> : <p className="empty-state">Nu există evenimente de audit încă.</p>}
+          </section> : null}
+          {view === "dashboard" ? <section className="panel notifications-panel"><div className="panel-heading"><div><h2>Notificări</h2><p>Alerte de termen pentru utilizatorul curent</p></div></div>
+            {data.notifications.length ? <ul className="notification-list">{data.notifications.slice(0, 6).map((item) => <li className={item.status === "UNREAD" ? "unread" : ""} key={item.id}><div><strong>{item.title}</strong><p>{item.body}</p></div>{item.status === "UNREAD" ? <button disabled={readingId === item.id} onClick={() => void markNotificationRead(item.id)} type="button">{readingId === item.id ? "Se salvează…" : "Marchează citită"}</button> : <span>Citită</span>}</li>)}</ul> : <p className="empty-state">Nu există notificări pentru utilizatorul curent.</p>}
           </section> : null}
         </>
       ) : !error && !loading ? <p className="notice">Introdu tokenul local pentru a vedea datele operaționale.</p> : null}

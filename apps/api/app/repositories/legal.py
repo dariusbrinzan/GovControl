@@ -64,6 +64,18 @@ class LegalRepository:
             )
         )
 
+    async def decisions(
+        self, tenant_id: uuid.UUID, case_id: uuid.UUID | None = None
+    ) -> list[CourtDecision]:
+        statement = select(CourtDecision).where(CourtDecision.tenant_id == tenant_id)
+        if case_id is not None:
+            statement = statement.where(CourtDecision.case_id == case_id)
+        return list(
+            await self.session.scalars(
+                statement.order_by(CourtDecision.decision_date.desc(), CourtDecision.id)
+            )
+        )
+
     async def obligations(self, tenant_id: uuid.UUID) -> list[LegalObligation]:
         return list(
             await self.session.scalars(

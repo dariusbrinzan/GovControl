@@ -139,6 +139,19 @@ async def create_decision(
         raise service_error(exc) from exc
 
 
+@router.get("/decisions", response_model=list[CourtDecisionResponse])
+async def decisions(
+    user: LegalManager, session: SessionDependency, case_id: uuid.UUID | None = None
+) -> list[CourtDecisionResponse]:
+    try:
+        return [
+            CourtDecisionResponse.model_validate(item)
+            for item in await LegalService(session).list_decisions(user.tenant_id, case_id)
+        ]
+    except LegalResourceNotFoundError as exc:
+        raise service_error(exc) from exc
+
+
 @router.get("/obligations", response_model=list[LegalObligationResponse])
 async def obligations(
     user: LegalManager, session: SessionDependency

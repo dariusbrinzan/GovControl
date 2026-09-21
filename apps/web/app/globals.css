@@ -47,13 +47,22 @@ td small { color: #76839a; display: block; font-size: .7rem; margin-top: .25rem;
 .status-overdue { background: #fff0ed; color: #aa372f; }
 .status-completed { background: #e7f6ed; color: #227448; }
 .status-in_progress { background: #e8f2fb; color: #236091; }
+.status-select { background: white; border: 1px solid #cad5e5; border-radius: .35rem; color: #35506f; display: block; font-size: .72rem; margin-top: .45rem; max-width: 130px; padding: .3rem; }
 .text-danger { color: #b23830; font-weight: 700; }
 .side-column { display: grid; gap: 1rem; }
 .large-number { display: block; font-size: 2rem; letter-spacing: -.06em; margin-top: .55rem; }
 .audit-panel { margin-top: 1rem; }
+.notifications-panel { margin-top: 1rem; }
 .audit-list { list-style: none; margin: 0; padding: 0; }
 .audit-list li { border-top: 1px solid #edf0f5; display: grid; gap: .5rem; grid-template-columns: 130px 1fr auto; padding: .75rem 0; }
 .audit-list span, .audit-list time { color: #718097; font-size: .82rem; }
 .empty-state { color: #718097; font-size: .9rem; margin: 1rem 0; }
+.notification-list { list-style: none; margin: 0; padding: 0; }
+.notification-list li { align-items: center; border-top: 1px solid #edf0f5; display: flex; gap: 1rem; justify-content: space-between; padding: .8rem 0; }
+.notification-list li.unread { border-left: 3px solid #1b6891; padding-left: .65rem; }
+.notification-list strong { font-size: .88rem; }
+.notification-list p { margin: .25rem 0 0; }
+.notification-list button { background: white; border: 1px solid #b8c9df; border-radius: .35rem; color: #1b4d89; cursor: pointer; font-size: .76rem; font-weight: 700; padding: .45rem .55rem; white-space: nowrap; }
+.notification-list span { color: #6d7a90; font-size: .78rem; }
 @media (max-width: 800px) { .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .content-grid { grid-template-columns: 1fr; } .audit-list li { grid-template-columns: 1fr; gap: .2rem; } }
 @media (max-width: 520px) { .app-shell { padding: 0 .85rem 2rem; } .metric-grid { gap: .6rem; } .metric-grid article { min-height: 102px; padding: .8rem; } .metric-grid strong { font-size: 1.8rem; } .topbar { align-items: flex-start; flex-direction: column; gap: .7rem; padding: 1rem 0; } .token-row { flex-direction: column; } }

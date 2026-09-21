@@ -99,6 +99,7 @@ Users with `legal.manage` can manage legal cases, decisions, obligations, enforc
 penalty rules and documents. All records are filtered by the tenant established by the backend.
 
 - `GET, POST /api/v1/legal/cases`
+- `GET /api/v1/legal/decisions`; `POST /api/v1/legal/cases/{case_id}/decisions`
 - `POST /api/v1/legal/cases/{case_id}/decisions`
 - `GET, POST /api/v1/legal/obligations`; `PATCH /api/v1/legal/obligations/{id}/status`
 - `GET, POST /api/v1/legal/enforcements`
