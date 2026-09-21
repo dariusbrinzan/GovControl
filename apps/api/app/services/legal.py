@@ -17,6 +17,7 @@ from app.repositories.legal import LegalRepository
 from app.repositories.user import UserRepository
 from app.schemas.legal import CourtDecisionCreate, LegalCaseCreate, LegalObligationCreate
 from app.services.audit import AuditService
+from app.services.deadlines import DeadlineState, deadline_state
 
 
 class LegalConflictError(Exception):
@@ -142,6 +143,13 @@ class LegalService:
 
     async def list_obligations(self, tenant_id: uuid.UUID) -> list[LegalObligation]:
         return await self.repo.obligations(tenant_id)
+
+    async def overdue_obligations(self, tenant_id: uuid.UUID, today: date) -> list[LegalObligation]:
+        return [
+            item
+            for item in await self.list_obligations(tenant_id)
+            if deadline_state(item.due_date, item.status, today) == DeadlineState.OVERDUE
+        ]
 
     async def change_status(
         self,

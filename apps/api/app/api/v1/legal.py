@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -72,6 +73,14 @@ async def obligations(
         LegalObligationResponse.model_validate(x)
         for x in await LegalService(session).list_obligations(user.tenant_id)
     ]
+
+
+@router.get("/obligations/overdue", response_model=list[LegalObligationResponse])
+async def overdue_obligations(
+    user: LegalManager, session: SessionDependency
+) -> list[LegalObligationResponse]:
+    items = await LegalService(session).overdue_obligations(user.tenant_id, date.today())
+    return [LegalObligationResponse.model_validate(item) for item in items]
 
 
 @router.post("/obligations", response_model=LegalObligationResponse, status_code=201)
