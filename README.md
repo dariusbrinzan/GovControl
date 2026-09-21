@@ -15,3 +15,36 @@ make db-up
 
 Check the database status with `make db-status`, follow logs with `make db-logs`,
 and stop it with `make db-down`.
+
+## API foundation
+
+The backend is a Python 3.12 FastAPI application managed with `uv`. Install its
+dependencies and start the development server:
+
+```bash
+cd apps/api
+uv sync
+cd ../..
+make api-dev
+```
+
+The process health endpoint is available at `http://127.0.0.1:8000/api/v1/health`.
+The readiness endpoint at `/api/v1/ready` also verifies the PostgreSQL connection.
+
+Run backend checks with:
+
+```bash
+make api-check
+make api-test
+```
+
+## Database migrations
+
+Apply the committed Alembic migrations to the local PostgreSQL container with:
+
+```bash
+make db-migrate
+```
+
+Schema changes must be made through a new Alembic migration; do not modify the
+database structure manually.

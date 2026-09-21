@@ -1,0 +1,43 @@
+[project]
+name = "govcontrol-api"
+version = "0.1.0"
+description = "GovControl backend API"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "alembic>=1.14,<2.0",
+    "asyncpg>=0.30,<1.0",
+    "fastapi>=0.115,<1.0",
+    "greenlet>=3.1,<4.0",
+    "pydantic-settings>=2.7,<3.0",
+    "sqlalchemy>=2.0.36,<3.0",
+    "uvicorn[standard]>=0.30,<1.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28,<1.0",
+    "mypy>=1.13,<2.0",
+    "pytest>=8.3,<10.0",
+    "pytest-asyncio>=0.24,<1.0",
+    "ruff>=0.8,<1.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/versions/*.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_ignores = true
+exclude = ["^tests/"]
+plugins = ["pydantic.mypy"]
