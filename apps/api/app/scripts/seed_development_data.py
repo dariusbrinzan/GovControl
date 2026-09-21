@@ -13,6 +13,7 @@ DEVELOPMENT_ADMIN_EMAIL = "admin@govcontrol.local"
 DEVELOPMENT_ADMIN_NAME = "GovControl Development Admin"
 PLATFORM_ADMIN_ROLE_KEY = "platform_admin"
 PLATFORM_MANAGE_PERMISSION_KEY = "platform.manage"
+LEGAL_MANAGE_PERMISSION_KEY = "legal.manage"
 
 
 async def seed_development_data() -> None:
@@ -24,16 +25,17 @@ async def seed_development_data() -> None:
             session.add(tenant)
             await session.flush()
 
-        permission = await session.scalar(
-            select(Permission).where(Permission.key == PLATFORM_MANAGE_PERMISSION_KEY)
-        )
-        if permission is None:
-            permission = Permission(
-                key=PLATFORM_MANAGE_PERMISSION_KEY,
-                description="Manage platform configuration within the tenant.",
-            )
-            session.add(permission)
-            await session.flush()
+        permissions: list[Permission] = []
+        for key, description in (
+            (PLATFORM_MANAGE_PERMISSION_KEY, "Manage platform configuration within the tenant."),
+            (LEGAL_MANAGE_PERMISSION_KEY, "Manage GovLegal records within the tenant."),
+        ):
+            permission = await session.scalar(select(Permission).where(Permission.key == key))
+            if permission is None:
+                permission = Permission(key=key, description=description)
+                session.add(permission)
+                await session.flush()
+            permissions.append(permission)
 
         role = await session.scalar(
             select(Role).where(
@@ -51,9 +53,10 @@ async def seed_development_data() -> None:
             session.add(role)
             await session.flush()
 
-        role_permission = await session.get(RolePermission, (role.id, permission.id))
-        if role_permission is None:
-            session.add(RolePermission(role_id=role.id, permission_id=permission.id))
+        for permission in permissions:
+            role_permission = await session.get(RolePermission, (role.id, permission.id))
+            if role_permission is None:
+                session.add(RolePermission(role_id=role.id, permission_id=permission.id))
 
         user = await session.scalar(
             select(User).where(

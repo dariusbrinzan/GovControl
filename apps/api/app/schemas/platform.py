@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, StringConstraints, field_validator
 
 from app.models.rbac import RoleScope
 
@@ -10,6 +10,7 @@ DepartmentName = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
 ]
 DepartmentCode = Annotated[str, StringConstraints(strip_whitespace=True, max_length=64)]
+DisplayName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
 
 
 class TenantResponse(BaseModel):
@@ -56,3 +57,31 @@ class RoleResponse(BaseModel):
     key: str
     name: str
     description: str | None
+
+
+class UserCreate(BaseModel):
+    email: EmailStr
+    display_name: DisplayName
+    department_id: uuid.UUID | None = None
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        return str(value).lower()
+
+
+class UserResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    department_id: uuid.UUID | None
+    email: str
+    display_name: str
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class UserRoleAssign(BaseModel):
+    role_id: uuid.UUID

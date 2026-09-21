@@ -19,3 +19,12 @@ class RoleRepository:
             .order_by(Role.scope, Role.name, Role.id)
         )
         return list(roles)
+
+    async def get_visible_by_id(self, role_id: uuid.UUID, tenant_id: uuid.UUID) -> Role | None:
+        role: Role | None = await self._session.scalar(
+            select(Role).where(
+                Role.id == role_id,
+                or_(Role.scope == RoleScope.SYSTEM, Role.tenant_id == tenant_id),
+            )
+        )
+        return role

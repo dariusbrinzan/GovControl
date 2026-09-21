@@ -76,3 +76,5 @@ permission. They only expose records in the authenticated user's tenant:
 - `GET /api/v1/platform/tenant`
 - `GET, POST /api/v1/platform/departments`
 - `GET /api/v1/platform/roles`
+- `GET, POST /api/v1/platform/users`
+- `PUT /api/v1/platform/users/{user_id}/roles`
