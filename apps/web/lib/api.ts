@@ -46,6 +46,19 @@ export type PenaltyRule = {
   end_date: string | null;
 };
 
+export type PenaltyExposure = { rule_id: string; as_of_date: string; amount: string };
+
+export type DocumentRecord = {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  category: string;
+  original_filename: string;
+  content_type: string;
+  size_bytes: number;
+  created_at: string;
+};
+
 export type AuditEvent = {
   id: string;
   action: string;
@@ -128,4 +141,15 @@ export async function apiUpload<T>(path: string, token: string, body: FormData):
     throw new Error(payload?.detail ?? `API request failed (${response.status})`);
   }
   return response.json() as Promise<T>;
+}
+
+export async function apiDownload(path: string, token: string): Promise<Blob> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.detail ?? `API request failed (${response.status})`);
+  }
+  return response.blob();
 }

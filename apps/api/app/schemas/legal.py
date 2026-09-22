@@ -102,6 +102,10 @@ class EnforcementProceedingResponse(BaseModel):
     status: EnforcementStatus
 
 
+class EnforcementStatusChange(BaseModel):
+    status: EnforcementStatus
+
+
 class PenaltyRuleCreate(BaseModel):
     obligation_id: uuid.UUID
     calculation_type: PenaltyCalculationType

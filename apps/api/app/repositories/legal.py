@@ -57,51 +57,57 @@ class LegalRepository:
         )
         return item
 
-    async def cases(self, tenant_id: uuid.UUID) -> list[LegalCase]:
+    async def cases(self, tenant_id: uuid.UUID, limit: int) -> list[LegalCase]:
         return list(
             await self.session.scalars(
                 select(LegalCase)
                 .where(LegalCase.tenant_id == tenant_id)
                 .order_by(LegalCase.created_at.desc())
+                .limit(limit)
             )
         )
 
     async def decisions(
-        self, tenant_id: uuid.UUID, case_id: uuid.UUID | None = None
+        self, tenant_id: uuid.UUID, limit: int, case_id: uuid.UUID | None = None
     ) -> list[CourtDecision]:
         statement = select(CourtDecision).where(CourtDecision.tenant_id == tenant_id)
         if case_id is not None:
             statement = statement.where(CourtDecision.case_id == case_id)
         return list(
             await self.session.scalars(
-                statement.order_by(CourtDecision.decision_date.desc(), CourtDecision.id)
+                statement.order_by(CourtDecision.decision_date.desc(), CourtDecision.id).limit(
+                    limit
+                )
             )
         )
 
-    async def obligations(self, tenant_id: uuid.UUID) -> list[LegalObligation]:
+    async def obligations(self, tenant_id: uuid.UUID, limit: int = 500) -> list[LegalObligation]:
         return list(
             await self.session.scalars(
                 select(LegalObligation)
                 .where(LegalObligation.tenant_id == tenant_id)
                 .order_by(LegalObligation.due_date, LegalObligation.id)
+                .limit(limit)
             )
         )
 
-    async def enforcements(self, tenant_id: uuid.UUID) -> list[EnforcementProceeding]:
+    async def enforcements(self, tenant_id: uuid.UUID, limit: int) -> list[EnforcementProceeding]:
         return list(
             await self.session.scalars(
                 select(EnforcementProceeding)
                 .where(EnforcementProceeding.tenant_id == tenant_id)
                 .order_by(EnforcementProceeding.start_date.desc())
+                .limit(limit)
             )
         )
 
-    async def penalty_rules(self, tenant_id: uuid.UUID) -> list[PenaltyRule]:
+    async def penalty_rules(self, tenant_id: uuid.UUID, limit: int) -> list[PenaltyRule]:
         return list(
             await self.session.scalars(
                 select(PenaltyRule)
                 .where(PenaltyRule.tenant_id == tenant_id)
                 .order_by(PenaltyRule.start_date.desc(), PenaltyRule.id)
+                .limit(limit)
             )
         )
 

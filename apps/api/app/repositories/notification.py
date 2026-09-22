@@ -34,12 +34,15 @@ class NotificationRepository:
         )
         return item
 
-    async def has_deduplication_key(self, tenant_id: uuid.UUID, key: str) -> bool:
-        return (
-            await self.session.scalar(
-                select(Notification.id).where(
-                    Notification.tenant_id == tenant_id,
-                    Notification.deduplication_key == key,
-                )
+    async def existing_deduplication_keys(
+        self, tenant_id: uuid.UUID, keys: set[str]
+    ) -> set[str]:
+        if not keys:
+            return set()
+        rows = await self.session.scalars(
+            select(Notification.deduplication_key).where(
+                Notification.tenant_id == tenant_id,
+                Notification.deduplication_key.in_(keys),
             )
-        ) is not None
+        )
+        return set(rows)

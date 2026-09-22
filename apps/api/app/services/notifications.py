@@ -5,6 +5,7 @@ from enum import StrEnum
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.legal import LegalObligation
 from app.models.notification import Notification, NotificationStatus
 from app.repositories.legal import LegalRepository
 from app.repositories.notification import NotificationRepository
@@ -79,7 +80,7 @@ class NotificationService:
     async def dispatch_deadline_reminders(
         self, tenant_id: uuid.UUID, actor_id: uuid.UUID, today: date
     ) -> int:
-        created = 0
+        candidates: list[tuple[LegalObligation, DeadlineState, str]] = []
         for obligation in await self.legal.obligations(tenant_id):
             state = deadline_state(obligation.due_date, obligation.status, today)
             if state not in {DeadlineState.OVERDUE, DeadlineState.DUE_TODAY} and not (
@@ -91,7 +92,16 @@ class NotificationService:
             if obligation.due_date is None:
                 continue
             key = f"deadline:{obligation.id}:{today.isoformat()}:{state.value}"
-            if await self.repo.has_deduplication_key(tenant_id, key):
+            candidates.append((obligation, state, key))
+
+        existing_keys = await self.repo.existing_deduplication_keys(
+            tenant_id, {key for _, _, key in candidates}
+        )
+        notifications: list[Notification] = []
+        for obligation, state, key in candidates:
+            if key in existing_keys:
+                continue
+            if obligation.due_date is None:
                 continue
             notification = Notification(
                 tenant_id=tenant_id,
@@ -107,8 +117,13 @@ class NotificationService:
                 due_date=obligation.due_date,
                 deduplication_key=key,
             )
-            self.session.add(notification)
-            await self.session.flush()
+            notifications.append(notification)
+
+        if not notifications:
+            return 0
+        self.session.add_all(notifications)
+        await self.session.flush()
+        for notification in notifications:
             self.audit.record_created(
                 tenant_id=tenant_id,
                 actor_user_id=actor_id,
@@ -116,10 +131,8 @@ class NotificationService:
                 entity_id=notification.id,
                 new_value={"notification_type": notification.notification_type},
             )
-            created += 1
-        if created:
-            await self.session.commit()
-        return created
+        await self.session.commit()
+        return len(notifications)
 
     @staticmethod
     def _deadline_title(state: DeadlineState) -> str:

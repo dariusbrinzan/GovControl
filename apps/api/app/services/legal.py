@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.legal import (
     CourtDecision,
     EnforcementProceeding,
+    EnforcementStatus,
     LegalCase,
     LegalObligation,
     ObligationStatus,
@@ -92,15 +93,15 @@ class LegalService:
             ),
         )
 
-    async def list_cases(self, tenant_id: uuid.UUID) -> list[LegalCase]:
-        return await self.repo.cases(tenant_id)
+    async def list_cases(self, tenant_id: uuid.UUID, limit: int = 100) -> list[LegalCase]:
+        return await self.repo.cases(tenant_id, limit)
 
     async def list_decisions(
-        self, tenant_id: uuid.UUID, case_id: uuid.UUID | None = None
+        self, tenant_id: uuid.UUID, limit: int = 100, case_id: uuid.UUID | None = None
     ) -> list[CourtDecision]:
         if case_id is not None and await self.repo.case(case_id, tenant_id) is None:
             raise LegalResourceNotFoundError
-        return await self.repo.decisions(tenant_id, case_id)
+        return await self.repo.decisions(tenant_id, limit, case_id)
 
     async def create_enforcement(
         self, tenant_id: uuid.UUID, actor_id: uuid.UUID, data: EnforcementProceedingCreate
@@ -120,8 +121,34 @@ class LegalService:
             ),
         )
 
-    async def list_enforcements(self, tenant_id: uuid.UUID) -> list[EnforcementProceeding]:
-        return await self.repo.enforcements(tenant_id)
+    async def list_enforcements(
+        self, tenant_id: uuid.UUID, limit: int = 100
+    ) -> list[EnforcementProceeding]:
+        return await self.repo.enforcements(tenant_id, limit)
+
+    async def change_enforcement_status(
+        self,
+        tenant_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        enforcement_id: uuid.UUID,
+        new_status: EnforcementStatus,
+    ) -> EnforcementProceeding:
+        item = await self.repo.enforcement(enforcement_id, tenant_id)
+        if item is None:
+            raise LegalResourceNotFoundError
+        old_status = item.status
+        item.status = new_status
+        self.audit.record_event(
+            tenant_id=tenant_id,
+            actor_user_id=actor_id,
+            action="STATUS_CHANGED",
+            entity_type="EnforcementProceeding",
+            entity_id=item.id,
+            new_value={"old_status": old_status.value, "new_status": new_status.value},
+        )
+        await self.session.commit()
+        await self.session.refresh(item)
+        return item
 
     async def create_penalty_rule(
         self, tenant_id: uuid.UUID, actor_id: uuid.UUID, data: PenaltyRuleCreate
@@ -143,8 +170,8 @@ class LegalService:
             ),
         )
 
-    async def list_penalty_rules(self, tenant_id: uuid.UUID) -> list[PenaltyRule]:
-        return await self.repo.penalty_rules(tenant_id)
+    async def list_penalty_rules(self, tenant_id: uuid.UUID, limit: int = 100) -> list[PenaltyRule]:
+        return await self.repo.penalty_rules(tenant_id, limit)
 
     async def penalty_exposure(
         self, tenant_id: uuid.UUID, rule_id: uuid.UUID, as_of_date: date
@@ -221,8 +248,10 @@ class LegalService:
             ),
         )
 
-    async def list_obligations(self, tenant_id: uuid.UUID) -> list[LegalObligation]:
-        return await self.repo.obligations(tenant_id)
+    async def list_obligations(
+        self, tenant_id: uuid.UUID, limit: int = 500
+    ) -> list[LegalObligation]:
+        return await self.repo.obligations(tenant_id, limit)
 
     async def overdue_obligations(self, tenant_id: uuid.UUID, today: date) -> list[LegalObligation]:
         return [

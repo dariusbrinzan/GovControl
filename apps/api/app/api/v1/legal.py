@@ -2,7 +2,7 @@ import uuid
 from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.security import AuthenticatedUser, SessionDependency, require_permission
 from app.schemas.dashboard import LegalDashboardResponse
@@ -11,6 +11,7 @@ from app.schemas.legal import (
     CourtDecisionResponse,
     EnforcementProceedingCreate,
     EnforcementProceedingResponse,
+    EnforcementStatusChange,
     LegalCaseCreate,
     LegalCaseResponse,
     LegalObligationCreate,
@@ -48,11 +49,11 @@ def service_error(exc: Exception) -> HTTPException:
 
 @router.get("/enforcements", response_model=list[EnforcementProceedingResponse])
 async def enforcements(
-    user: LegalManager, session: SessionDependency
+    user: LegalManager, session: SessionDependency, limit: int = Query(default=100, ge=1, le=500)
 ) -> list[EnforcementProceedingResponse]:
     return [
         EnforcementProceedingResponse.model_validate(item)
-        for item in await LegalService(session).list_enforcements(user.tenant_id)
+        for item in await LegalService(session).list_enforcements(user.tenant_id, limit)
     ]
 
 
@@ -68,13 +69,30 @@ async def create_enforcement(
         raise service_error(exc) from exc
 
 
+@router.patch("/enforcements/{enforcement_id}/status", response_model=EnforcementProceedingResponse)
+async def change_enforcement_status(
+    enforcement_id: uuid.UUID,
+    data: EnforcementStatusChange,
+    user: LegalManager,
+    session: SessionDependency,
+) -> EnforcementProceedingResponse:
+    try:
+        return EnforcementProceedingResponse.model_validate(
+            await LegalService(session).change_enforcement_status(
+                user.tenant_id, user.id, enforcement_id, data.status
+            )
+        )
+    except LegalResourceNotFoundError as exc:
+        raise service_error(exc) from exc
+
+
 @router.get("/penalties/rules", response_model=list[PenaltyRuleResponse])
 async def penalty_rules(
-    user: LegalManager, session: SessionDependency
+    user: LegalManager, session: SessionDependency, limit: int = Query(default=100, ge=1, le=500)
 ) -> list[PenaltyRuleResponse]:
     return [
         PenaltyRuleResponse.model_validate(item)
-        for item in await LegalService(session).list_penalty_rules(user.tenant_id)
+        for item in await LegalService(session).list_penalty_rules(user.tenant_id, limit)
     ]
 
 
@@ -108,10 +126,12 @@ async def penalty_exposure(
 
 
 @router.get("/cases", response_model=list[LegalCaseResponse])
-async def cases(user: LegalManager, session: SessionDependency) -> list[LegalCaseResponse]:
+async def cases(
+    user: LegalManager, session: SessionDependency, limit: int = Query(default=100, ge=1, le=500)
+) -> list[LegalCaseResponse]:
     return [
         LegalCaseResponse.model_validate(x)
-        for x in await LegalService(session).list_cases(user.tenant_id)
+        for x in await LegalService(session).list_cases(user.tenant_id, limit)
     ]
 
 
@@ -141,12 +161,15 @@ async def create_decision(
 
 @router.get("/decisions", response_model=list[CourtDecisionResponse])
 async def decisions(
-    user: LegalManager, session: SessionDependency, case_id: uuid.UUID | None = None
+    user: LegalManager,
+    session: SessionDependency,
+    limit: int = Query(default=100, ge=1, le=500),
+    case_id: uuid.UUID | None = None,
 ) -> list[CourtDecisionResponse]:
     try:
         return [
             CourtDecisionResponse.model_validate(item)
-            for item in await LegalService(session).list_decisions(user.tenant_id, case_id)
+            for item in await LegalService(session).list_decisions(user.tenant_id, limit, case_id)
         ]
     except LegalResourceNotFoundError as exc:
         raise service_error(exc) from exc
@@ -154,11 +177,11 @@ async def decisions(
 
 @router.get("/obligations", response_model=list[LegalObligationResponse])
 async def obligations(
-    user: LegalManager, session: SessionDependency
+    user: LegalManager, session: SessionDependency, limit: int = Query(default=100, ge=1, le=500)
 ) -> list[LegalObligationResponse]:
     return [
         LegalObligationResponse.model_validate(x)
-        for x in await LegalService(session).list_obligations(user.tenant_id)
+        for x in await LegalService(session).list_obligations(user.tenant_id, limit)
     ]
 
 
