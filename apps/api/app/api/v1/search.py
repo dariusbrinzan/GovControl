@@ -12,8 +12,9 @@ async def legal_search(
     current_user: CurrentUserDependency,
     session: SessionDependency,
     q: str = Query(min_length=2, max_length=100),
+    limit: int = Query(default=25, ge=1, le=100),
 ) -> LegalSearchResponse:
-    cases, obligations = await search_legal(session, current_user.tenant_id, q)
+    cases, obligations = await search_legal(session, current_user.tenant_id, q, limit)
     results = [
         LegalSearchResult(
             id=item.id,

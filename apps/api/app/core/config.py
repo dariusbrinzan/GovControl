@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     document_storage_path: Path = PROJECT_ROOT / "data" / "documents"
     max_document_size_bytes: int = 10 * 1024 * 1024
     cors_allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    response_compression_minimum_size: int = 1000
 
     @property
     def cors_origins(self) -> list[str]:

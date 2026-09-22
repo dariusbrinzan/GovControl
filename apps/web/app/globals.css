@@ -19,6 +19,15 @@ button, input { font: inherit; }
 .page-heading > p:last-child { color: #66748c; margin-bottom: 0; }
 .connection-card, .panel, .notice { background: white; border: 1px solid #dfe6f0; border-radius: .75rem; box-shadow: 0 10px 28px rgba(28, 53, 90, .045); }
 .connection-card { margin-bottom: 1.4rem; padding: 1rem; }
+.search-card { background: #eef4fb; border: 1px solid #d4e0ef; border-radius: .75rem; margin-bottom: 1rem; padding: 1rem; }
+.search-card label { display: block; font-size: .8rem; font-weight: 700; margin-bottom: .4rem; }
+.search-card form > div { display: flex; gap: .55rem; }
+.search-card input { border: 1px solid #bdc9db; border-radius: .45rem; flex: 1; min-width: 0; padding: .6rem; }
+.search-card button { background: #1b4d89; border: 0; border-radius: .45rem; color: white; font-weight: 700; padding: .6rem .8rem; }
+.search-card ul { list-style: none; margin: .75rem 0 0; padding: 0; }
+.search-card li { border-top: 1px solid #d8e3f0; padding: .55rem 0; }
+.search-card li span { color: #60728a; font-size: .75rem; margin-left: .5rem; }
+.search-card li p { color: #53647c; font-size: .82rem; margin: .25rem 0 0; }
 .connection-card label { display: block; font-size: .82rem; font-weight: 700; margin-bottom: .45rem; }
 .connection-card p { color: #708099; font-size: .78rem; margin: .55rem 0 0; }
 .token-row { display: flex; gap: .6rem; }
@@ -48,11 +57,19 @@ td small { color: #76839a; display: block; font-size: .7rem; margin-top: .25rem;
 .status-completed { background: #e7f6ed; color: #227448; }
 .status-in_progress { background: #e8f2fb; color: #236091; }
 .status-select { background: white; border: 1px solid #cad5e5; border-radius: .35rem; color: #35506f; display: block; font-size: .72rem; margin-top: .45rem; max-width: 130px; padding: .3rem; }
+.upload-control { background: #f7f9fc; border: 1px solid #cad5e5; border-radius: .35rem; color: #1b4d89; cursor: pointer; display: inline-block; font-size: .72rem; font-weight: 700; padding: .42rem .5rem; }
+.upload-control input { display: none; }
 .text-danger { color: #b23830; font-weight: 700; }
 .side-column { display: grid; gap: 1rem; }
 .large-number { display: block; font-size: 2rem; letter-spacing: -.06em; margin-top: .55rem; }
 .audit-panel { margin-top: 1rem; }
 .notifications-panel { margin-top: 1rem; }
+.create-case-panel { margin-top: 1rem; }
+.case-form { display: grid; gap: .8rem; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.case-form label { color: #516079; display: grid; font-size: .78rem; font-weight: 700; gap: .35rem; }
+.case-form input, .case-form select, .case-form textarea { border: 1px solid #cad5e5; border-radius: .4rem; color: #17233b; padding: .55rem; resize: vertical; }
+.case-form .wide { grid-column: span 3; }
+.case-form button { background: #1b4d89; border: 0; border-radius: .4rem; color: white; cursor: pointer; font-weight: 700; justify-self: start; padding: .65rem .85rem; }
 .audit-list { list-style: none; margin: 0; padding: 0; }
 .audit-list li { border-top: 1px solid #edf0f5; display: grid; gap: .5rem; grid-template-columns: 130px 1fr auto; padding: .75rem 0; }
 .audit-list span, .audit-list time { color: #718097; font-size: .82rem; }

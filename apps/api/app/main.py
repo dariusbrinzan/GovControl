@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
@@ -20,6 +21,9 @@ def create_application() -> FastAPI:
         allow_credentials=False,
         allow_methods=["GET", "POST", "PATCH", "PUT"],
         allow_headers=["Authorization", "Content-Type"],
+    )
+    app.add_middleware(
+        GZipMiddleware, minimum_size=settings.response_compression_minimum_size
     )
     app.include_router(api_router, prefix="/api/v1")
     return app

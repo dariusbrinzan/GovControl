@@ -23,6 +23,14 @@ export type LegalCase = {
   status: string;
 };
 
+export type CourtDecision = {
+  id: string;
+  case_id: string;
+  decision_number: string;
+  decision_date: string;
+  decision_type: string;
+};
+
 export type EnforcementProceeding = {
   id: string;
   file_number: string;
@@ -57,6 +65,17 @@ export type Notification = {
   created_at: string;
 };
 
+export type LegalSearchResult = {
+  id: string;
+  entity_type: string;
+  title: string;
+  summary: string;
+  status: string;
+  due_date: string | null;
+};
+
+export type LegalSearchResponse = { results: LegalSearchResult[] };
+
 const apiBaseUrl =
   process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8000/api/v1";
 
@@ -77,6 +96,32 @@ export async function apiPatch<T>(path: string, token: string, body: unknown): P
     method: "PATCH",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.detail ?? `API request failed (${response.status})`);
+  }
+  return response.json() as Promise<T>;
+}
+
+export async function apiPost<T>(path: string, token: string, body: unknown): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.detail ?? `API request failed (${response.status})`);
+  }
+  return response.json() as Promise<T>;
+}
+
+export async function apiUpload<T>(path: string, token: string, body: FormData): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body,
   });
   if (!response.ok) {
     const payload = await response.json().catch(() => null);

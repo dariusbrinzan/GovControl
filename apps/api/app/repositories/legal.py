@@ -1,6 +1,7 @@
 import uuid
+from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.legal import (
@@ -8,6 +9,7 @@ from app.models.legal import (
     EnforcementProceeding,
     LegalCase,
     LegalObligation,
+    ObligationStatus,
     PenaltyRule,
 )
 
@@ -102,3 +104,35 @@ class LegalRepository:
                 .order_by(PenaltyRule.start_date.desc(), PenaltyRule.id)
             )
         )
+
+    async def dashboard_counts(self, tenant_id: uuid.UUID, today: date) -> dict[str, int]:
+        active = LegalObligation.status.not_in(
+            [ObligationStatus.COMPLETED, ObligationStatus.CANCELLED]
+        )
+        overdue = (
+            active & LegalObligation.due_date.is_not(None) & (LegalObligation.due_date < today)
+        )
+        due_soon = (
+            active
+            & LegalObligation.due_date.is_not(None)
+            & (LegalObligation.due_date >= today)
+            & (LegalObligation.due_date <= date.fromordinal(today.toordinal() + 7))
+        )
+        row = (
+            await self.session.execute(
+                select(
+                    func.count().filter(active),
+                    func.count().filter(overdue),
+                    func.count().filter(due_soon),
+                    func.coalesce(
+                        func.sum(case((overdue, today - LegalObligation.due_date), else_=0)), 0
+                    ),
+                ).where(LegalObligation.tenant_id == tenant_id)
+            )
+        ).one()
+        return {
+            "open_obligations": int(row[0]),
+            "overdue_obligations": int(row[1]),
+            "due_within_seven_days": int(row[2]),
+            "overdue_days_total": int(row[3]),
+        }

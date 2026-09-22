@@ -19,6 +19,18 @@ config.set_main_option("sqlalchemy.url", get_settings().database_url)
 target_metadata = Base.metadata
 
 
+def include_object(
+    object_: object,
+    name: str | None,
+    type_: str,
+    reflected: bool,
+    compare_to: object | None,
+) -> bool:
+    """Keep PostgreSQL-specific search indexes managed by their explicit migration."""
+    del object_, reflected, compare_to
+    return not (type_ == "index" and name is not None and name.endswith("_trgm"))
+
+
 def run_migrations_offline() -> None:
     """Generate SQL without connecting to a database."""
     context.configure(
@@ -27,6 +39,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -34,7 +47,12 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        include_object=include_object,
+    )
 
     with context.begin_transaction():
         context.run_migrations()
