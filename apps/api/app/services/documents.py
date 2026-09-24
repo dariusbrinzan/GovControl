@@ -79,6 +79,9 @@ class DocumentService:
         await self._ensure_entity_exists(tenant_id, entity_type, entity_id)
         return await self.repo.list_for_entity(tenant_id, entity_type, entity_id)
 
+    async def list_for_tenant(self, tenant_id: uuid.UUID) -> list[Document]:
+        return await self.repo.list_for_tenant(tenant_id)
+
     async def download_path(
         self, tenant_id: uuid.UUID, document_id: uuid.UUID
     ) -> tuple[Document, str]:

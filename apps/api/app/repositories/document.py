@@ -25,6 +25,16 @@ class DocumentRepository:
             )
         )
 
+    async def list_for_tenant(self, tenant_id: uuid.UUID, limit: int = 500) -> list[Document]:
+        return list(
+            await self.session.scalars(
+                select(Document)
+                .where(Document.tenant_id == tenant_id)
+                .order_by(Document.created_at.desc(), Document.id)
+                .limit(limit)
+            )
+        )
+
     async def get_by_id_for_tenant(
         self, document_id: uuid.UUID, tenant_id: uuid.UUID
     ) -> Document | None:

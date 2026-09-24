@@ -39,11 +39,21 @@ def document_error(exc: Exception) -> HTTPException:
 
 @router.get("", response_model=list[DocumentResponse])
 async def documents(
-    entity_type: DocumentEntityType,
-    entity_id: uuid.UUID,
     user: LegalManager,
     service: DocumentServiceDependency,
+    entity_type: DocumentEntityType | None = None,
+    entity_id: uuid.UUID | None = None,
 ) -> list[DocumentResponse]:
+    if entity_type is None and entity_id is None:
+        return [
+            DocumentResponse.model_validate(item)
+            for item in await service.list_for_tenant(user.tenant_id)
+        ]
+    if entity_type is None or entity_id is None:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "entity_type and entity_id must be provided together.",
+        )
     try:
         return [
             DocumentResponse.model_validate(item)

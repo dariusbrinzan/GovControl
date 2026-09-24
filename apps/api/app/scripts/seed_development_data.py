@@ -6,6 +6,7 @@ from app.db.session import async_session_factory
 from app.models.rbac import Permission, Role, RolePermission, RoleScope, UserRole
 from app.models.tenant import Tenant
 from app.models.user import User
+from app.scripts.seed_demo_legal_data import seed_demo_legal_data
 
 DEVELOPMENT_TENANT_NAME = "GovControl Demo Municipality"
 DEVELOPMENT_TENANT_SLUG = "govcontrol-demo"
@@ -111,6 +112,8 @@ async def seed_development_data() -> None:
         user_role = await session.get(UserRole, (user.id, administrator_role.id))
         if user_role is None:
             session.add(UserRole(user_id=user.id, role_id=administrator_role.id))
+
+        await seed_demo_legal_data(session, tenant, user, roles)
 
 
 def main() -> None:
