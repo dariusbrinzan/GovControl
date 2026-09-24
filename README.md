@@ -1,6 +1,10 @@
 # GovControl
 GovControl – Operational Risk Platform for Public Administration
 
+The repository now contains independently runnable application boundaries: the existing
+platform/GovLegal API, the shared Next.js portal and the new GovContracts API. See
+[`docs/architecture.md`](docs/architecture.md) for ownership and communication rules.
+
 ## Local database
 
 GovControl uses PostgreSQL 16 in Docker for local development. The database data is
@@ -138,6 +142,10 @@ roles with scoped permissions.
 
 ## Containers
 
-`docker compose up --build` starts PostgreSQL, the API and the Next.js interface. Apply migrations
-with `make db-migrate` before using a newly built local environment. PostgreSQL and document content
-use separate named volumes (`postgres_data` and `document_data`).
+`docker compose up --build` starts PostgreSQL, Redis, MinIO, both APIs and the Next.js interface.
+Apply `make db-migrate` and `make contracts-migrate` before using a newly built local environment.
+For infrastructure-only local development, use `make platform-up`.
+
+GovContracts runs at `http://127.0.0.1:8010`, exposes `/health`, `/ready` and API documentation at
+`/api/v1/docs`, and delegates authentication to the platform API. Run its isolated quality gate
+with `make contracts-check`.

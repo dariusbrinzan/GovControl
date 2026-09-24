@@ -17,6 +17,8 @@ PLATFORM_MANAGE_PERMISSION_KEY = "platform.manage"
 LEGAL_MANAGE_PERMISSION_KEY = "legal.manage"
 LEGAL_REPORT_PERMISSION_KEY = "legal.report"
 AUDIT_VIEW_PERMISSION_KEY = "audit.view"
+CONTRACTS_MANAGE_PERMISSION_KEY = "contracts.manage"
+CONTRACTS_REPORT_PERMISSION_KEY = "contracts.report"
 
 
 async def seed_development_data() -> None:
@@ -34,6 +36,8 @@ async def seed_development_data() -> None:
             (LEGAL_MANAGE_PERMISSION_KEY, "Manage GovLegal records within the tenant."),
             (LEGAL_REPORT_PERMISSION_KEY, "View tenant-scoped GovLegal analytics and reports."),
             (AUDIT_VIEW_PERMISSION_KEY, "View the tenant audit trail."),
+            (CONTRACTS_MANAGE_PERMISSION_KEY, "Manage GovContracts records within the tenant."),
+            (CONTRACTS_REPORT_PERMISSION_KEY, "View GovContracts analytics and reports."),
         ):
             permission = await session.scalar(select(Permission).where(Permission.key == key))
             if permission is None:
@@ -49,6 +53,22 @@ async def seed_development_data() -> None:
                 "Administrator platformă",
                 "Acces complet pentru administrarea locală.",
                 tuple(permissions),
+            ),
+            (
+                "contracts_manager",
+                "Manager contracte",
+                "Gestionează contractele, rapoartele și auditul contractual.",
+                (
+                    CONTRACTS_MANAGE_PERMISSION_KEY,
+                    CONTRACTS_REPORT_PERMISSION_KEY,
+                    AUDIT_VIEW_PERMISSION_KEY,
+                ),
+            ),
+            (
+                "contracts_officer",
+                "Responsabil contracte",
+                "Gestionează registrul și execuția contractelor.",
+                (CONTRACTS_MANAGE_PERMISSION_KEY,),
             ),
             (
                 "legal_director",
@@ -70,7 +90,11 @@ async def seed_development_data() -> None:
                 "auditor",
                 "Auditor",
                 "Consultă rapoartele și jurnalul de audit.",
-                (LEGAL_REPORT_PERMISSION_KEY, AUDIT_VIEW_PERMISSION_KEY),
+                (
+                    LEGAL_REPORT_PERMISSION_KEY,
+                    CONTRACTS_REPORT_PERMISSION_KEY,
+                    AUDIT_VIEW_PERMISSION_KEY,
+                ),
             ),
         )
         for role_key, name, description, permission_keys in role_definitions:

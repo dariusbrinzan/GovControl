@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
 
 import {
   Bell, BookOpenCheck, BriefcaseBusiness, CalendarClock, ChevronDown,
@@ -12,7 +13,18 @@ import {
 } from "../ui/icons";
 import { useSession } from "./session-provider";
 
-const groups = [
+type NavigationGroup = {
+  label: string;
+  items: Array<{
+    href: string;
+    label: string;
+    icon: LucideIcon;
+    permission: string;
+    exact?: boolean;
+  }>;
+};
+
+const legalGroups: NavigationGroup[] = [
   {
     label: "Activitate",
     items: [
@@ -42,11 +54,22 @@ const groups = [
   },
 ] as const;
 
+const contractGroups: NavigationGroup[] = [
+  {
+    label: "Activitate contractuală",
+    items: [
+      { href: "/contracts", label: "Panou de control", icon: LayoutDashboard, exact: true, permission: "contracts.report" },
+      { href: "/contracts/registry", label: "Registru contracte", icon: BriefcaseBusiness, permission: "contracts.manage" },
+    ],
+  },
+];
+
 const pageNames: Record<string, string> = {
   legal: "Panou de control", "my-work": "Activitatea mea", cases: "Dosare",
   decisions: "Hotărâri", obligations: "Obligații", deadlines: "Termene critice",
   enforcements: "Executări", penalties: "Penalități", documents: "Documente",
   notifications: "Notificări", audit: "Jurnal de audit", reports: "Rapoarte",
+  contracts: "Panou de control", registry: "Registru contracte",
 };
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -59,6 +82,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [draftToken, setDraftToken] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [query, setQuery] = useState("");
+  const contractModule = pathname.startsWith("/contracts");
+  const groups = contractModule ? contractGroups : legalGroups;
+  const moduleRoot = contractModule ? "/contracts" : "/legal";
+  const moduleName = contractModule ? "GovContracts" : "GovLegal";
+  const ModuleIcon = contractModule ? BriefcaseBusiness : Gavel;
 
   useEffect(() => setMobileOpen(false), [pathname]);
   const connectionVisible = showConnection || (ready && !user);
@@ -79,7 +107,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const submitSearch = (event: FormEvent) => {
     event.preventDefault();
-    if (query.trim().length >= 2) router.push(`/legal/search?q=${encodeURIComponent(query.trim())}`);
+    if (query.trim().length < 2) return;
+    const target = contractModule ? "/contracts/registry" : "/legal/search";
+    router.push(`${target}?q=${encodeURIComponent(query.trim())}`);
   };
 
   const parts = pathname.split("/").filter(Boolean);
@@ -88,18 +118,22 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className={`portal-shell ${collapsed ? "sidebar-collapsed" : ""}`}>
       <a className="skip-link" href="#main-content">Sari la conținut</a>
-      <aside className={`portal-sidebar ${mobileOpen ? "mobile-open" : ""}`} aria-label="Navigare GovLegal">
+      <aside className={`portal-sidebar ${mobileOpen ? "mobile-open" : ""}`} aria-label={`Navigare ${moduleName}`}>
         <div className="sidebar-brand">
           <span className="brand-mark" aria-hidden="true">GC</span>
           <div className="brand-copy"><strong>GovControl</strong><span>Platformă instituțională</span></div>
           <button className="icon-button mobile-only" onClick={() => setMobileOpen(false)} aria-label="Închide meniul"><X size={19} /></button>
         </div>
-        <div className="module-card"><span className="module-icon"><Gavel size={18} /></span><div><small>Modul activ</small><strong>GovLegal</strong></div><ChevronDown size={15} /></div>
-        <nav className="sidebar-nav" aria-label="Navigare GovLegal">
+        <div className="module-card"><span className="module-icon"><ModuleIcon size={18} /></span><div><small>Modul activ</small><strong>{moduleName}</strong></div><ChevronDown size={15} /></div>
+        <div className="module-switcher" aria-label="Schimbă modulul">
+          <Link className={!contractModule ? "active" : ""} href="/legal"><Gavel size={15} /><span>GovLegal</span></Link>
+          {(!user || user.permissions.includes("contracts.report") || user.permissions.includes("contracts.manage")) ? <Link className={contractModule ? "active" : ""} href="/contracts"><BriefcaseBusiness size={15} /><span>GovContracts</span></Link> : null}
+        </div>
+        <nav className="sidebar-nav" aria-label={`Navigare ${moduleName}`}>
           {groups.map((group) => <div className="nav-group" key={group.label}>
             <p>{group.label}</p>
             {group.items.filter((item) => !user || user.permissions.includes(item.permission)).map(({ href, label, icon: Icon, ...item }) => {
-              const active = "exact" in item && item.exact ? pathname === href : pathname.startsWith(href);
+              const active = item.exact ? pathname === href : pathname.startsWith(href);
               return <Link aria-current={active ? "page" : undefined} className={active ? "active" : ""} href={href} key={href} title={collapsed ? label : undefined}><Icon size={18} strokeWidth={1.8} /><span>{label}</span></Link>;
             })}
           </div>)}
@@ -115,8 +149,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="portal-main">
         <header className="portal-topbar">
           <button className="icon-button mobile-only" onClick={() => setMobileOpen(true)} aria-label="Deschide meniul"><Menu size={21} /></button>
-          <nav className="breadcrumbs" aria-label="Breadcrumb"><Link href="/legal">GovLegal</Link><span>/</span><strong>{currentName}</strong></nav>
-          <form className="global-search" onSubmit={submitSearch} role="search"><Search size={17} /><input aria-label="Caută în GovLegal" minLength={2} onChange={(event) => setQuery(event.target.value)} placeholder="Caută dosar, obligație…" value={query} /><kbd>⌘ K</kbd></form>
+          <nav className="breadcrumbs" aria-label="Breadcrumb"><Link href={moduleRoot}>{moduleName}</Link><span>/</span><strong>{currentName}</strong></nav>
+          <form className="global-search" onSubmit={submitSearch} role="search"><Search size={17} /><input aria-label={`Caută în ${moduleName}`} minLength={2} onChange={(event) => setQuery(event.target.value)} placeholder={contractModule ? "Caută număr, titlu…" : "Caută dosar, obligație…"} value={query} /><kbd>⌘ K</kbd></form>
           <div className="topbar-actions">
             <Link className="icon-button" href="/legal/notifications" aria-label="Notificări"><Bell size={19} /></Link>
             <button className="profile-button" onClick={() => setShowConnection(true)} type="button"><span className="avatar"><UserRound size={17} /></span><span className="profile-copy"><strong>{user?.display_name ?? "Conectare"}</strong><small>{user?.roles[0]?.replaceAll("_", " ") ?? "Mediu local"}</small></span><ChevronDown size={15} /></button>
