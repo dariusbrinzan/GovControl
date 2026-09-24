@@ -1,5 +1,2 @@
-import LegalWorkspace from "../../../components/legal-workspace";
-
-export default function ObligationsPage() {
-  return <LegalWorkspace view="obligations" />;
-}
+import OperationalPage from "../../../components/legal/operational-page";
+export default function Page() { return <OperationalPage view="obligations" />; }

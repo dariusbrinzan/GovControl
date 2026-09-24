@@ -147,6 +147,18 @@ async def create_case(
         raise service_error(exc) from exc
 
 
+@router.get("/cases/{case_id}", response_model=LegalCaseResponse)
+async def case_detail(
+    case_id: uuid.UUID, user: LegalManager, session: SessionDependency
+) -> LegalCaseResponse:
+    try:
+        return LegalCaseResponse.model_validate(
+            await LegalService(session).get_case(user.tenant_id, case_id)
+        )
+    except LegalResourceNotFoundError as exc:
+        raise service_error(exc) from exc
+
+
 @router.post("/cases/{case_id}/decisions", response_model=CourtDecisionResponse, status_code=201)
 async def create_decision(
     case_id: uuid.UUID, data: CourtDecisionCreate, user: LegalManager, session: SessionDependency
@@ -191,6 +203,18 @@ async def overdue_obligations(
 ) -> list[LegalObligationResponse]:
     items = await LegalService(session).overdue_obligations(user.tenant_id, date.today())
     return [LegalObligationResponse.model_validate(item) for item in items]
+
+
+@router.get("/obligations/{obligation_id}", response_model=LegalObligationResponse)
+async def obligation_detail(
+    obligation_id: uuid.UUID, user: LegalManager, session: SessionDependency
+) -> LegalObligationResponse:
+    try:
+        return LegalObligationResponse.model_validate(
+            await LegalService(session).get_obligation(user.tenant_id, obligation_id)
+        )
+    except LegalResourceNotFoundError as exc:
+        raise service_error(exc) from exc
 
 
 @router.post("/obligations", response_model=LegalObligationResponse, status_code=201)

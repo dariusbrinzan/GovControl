@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
-from app.models.rbac import Permission, RolePermission, UserRole
+from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.tenant import Tenant
 from app.models.user import User
 
@@ -24,8 +24,10 @@ class AuthenticatedUser:
 
     id: uuid.UUID
     tenant_id: uuid.UUID
+    department_id: uuid.UUID | None
     email: str
     display_name: str
+    roles: frozenset[str]
     permissions: frozenset[str]
 
 
@@ -85,11 +87,18 @@ async def get_current_user(
         .join(UserRole, UserRole.role_id == RolePermission.role_id)
         .where(UserRole.user_id == user.id)
     )
+    role_keys = await session.scalars(
+        select(Role.key)
+        .join(UserRole, UserRole.role_id == Role.id)
+        .where(UserRole.user_id == user.id)
+    )
     return AuthenticatedUser(
         id=user.id,
         tenant_id=user.tenant_id,
+        department_id=user.department_id,
         email=user.email,
         display_name=user.display_name,
+        roles=frozenset(role_keys.all()),
         permissions=frozenset(permission_keys.all()),
     )
 

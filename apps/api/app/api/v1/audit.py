@@ -1,16 +1,19 @@
-from fastapi import APIRouter, Query
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 
-from app.core.security import CurrentUserDependency, SessionDependency
+from app.core.security import AuthenticatedUser, SessionDependency, require_permission
 from app.models.audit import AuditEvent
 from app.schemas.audit import AuditEventPage, AuditEventResponse
 
 router = APIRouter(prefix="/audit")
+AuditViewer = Annotated[AuthenticatedUser, Depends(require_permission("audit.view"))]
 
 
 @router.get("/events", response_model=AuditEventPage)
 async def events(
-    current_user: CurrentUserDependency,
+    current_user: AuditViewer,
     session: SessionDependency,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),

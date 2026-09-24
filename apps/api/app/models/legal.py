@@ -8,6 +8,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Numeric,
     String,
     Text,
@@ -106,6 +107,15 @@ class CourtDecision(Base):
 
 class LegalObligation(Base):
     __tablename__ = "legal_obligations"
+    __table_args__ = (
+        Index("ix_legal_obligations_tenant_created_at", "tenant_id", "created_at"),
+        Index(
+            "ix_legal_obligations_tenant_status_due_date",
+            "tenant_id",
+            "status",
+            "due_date",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -141,6 +151,13 @@ class LegalObligation(Base):
 
 class ObligationStatusHistory(Base):
     __tablename__ = "obligation_status_history"
+    __table_args__ = (
+        Index(
+            "ix_obligation_status_history_tenant_changed_at",
+            "tenant_id",
+            "changed_at",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -165,6 +182,7 @@ class EnforcementProceeding(Base):
     __tablename__ = "enforcement_proceedings"
     __table_args__ = (
         UniqueConstraint("tenant_id", "file_number", name="uq_enforcement_tenant_file"),
+        Index("ix_enforcement_proceedings_tenant_status", "tenant_id", "status"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -186,6 +204,9 @@ class EnforcementProceeding(Base):
 
 class PenaltyRule(Base):
     __tablename__ = "penalty_rules"
+    __table_args__ = (
+        Index("ix_penalty_rules_tenant_start_date", "tenant_id", "start_date"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(

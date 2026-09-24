@@ -11,8 +11,10 @@ router = APIRouter(prefix="/auth")
 class CurrentUserResponse(BaseModel):
     id: uuid.UUID
     tenant_id: uuid.UUID
+    department_id: uuid.UUID | None
     email: str
     display_name: str
+    roles: list[str]
     permissions: list[str]
 
 
@@ -22,7 +24,9 @@ async def get_me(current_user: CurrentUserDependency) -> CurrentUserResponse:
     return CurrentUserResponse(
         id=current_user.id,
         tenant_id=current_user.tenant_id,
+        department_id=current_user.department_id,
         email=current_user.email,
         display_name=current_user.display_name,
+        roles=sorted(current_user.roles),
         permissions=sorted(current_user.permissions),
     )

@@ -1,5 +1,5 @@
-import LegalWorkspace from "../../components/legal-workspace";
+import AnalyticsDashboard from "../../components/legal/analytics-dashboard";
 
 export default function LegalPage() {
-  return <LegalWorkspace view="dashboard" />;
+  return <AnalyticsDashboard />;
 }

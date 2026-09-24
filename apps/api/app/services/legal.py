@@ -96,6 +96,12 @@ class LegalService:
     async def list_cases(self, tenant_id: uuid.UUID, limit: int = 100) -> list[LegalCase]:
         return await self.repo.cases(tenant_id, limit)
 
+    async def get_case(self, tenant_id: uuid.UUID, case_id: uuid.UUID) -> LegalCase:
+        item = await self.repo.case(case_id, tenant_id)
+        if item is None:
+            raise LegalResourceNotFoundError
+        return item
+
     async def list_decisions(
         self, tenant_id: uuid.UUID, limit: int = 100, case_id: uuid.UUID | None = None
     ) -> list[CourtDecision]:
@@ -252,6 +258,14 @@ class LegalService:
         self, tenant_id: uuid.UUID, limit: int = 500
     ) -> list[LegalObligation]:
         return await self.repo.obligations(tenant_id, limit)
+
+    async def get_obligation(
+        self, tenant_id: uuid.UUID, obligation_id: uuid.UUID
+    ) -> LegalObligation:
+        item = await self.repo.obligation(obligation_id, tenant_id)
+        if item is None:
+            raise LegalResourceNotFoundError
+        return item
 
     async def overdue_obligations(self, tenant_id: uuid.UUID, today: date) -> list[LegalObligation]:
         return [
