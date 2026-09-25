@@ -52,10 +52,19 @@ def test_internal_service_authentication_uses_constant_time_secret_check() -> No
 
 
 def test_production_requires_internal_service_secret() -> None:
-    with pytest.raises(ValueError, match="INTERNAL_SERVICE_TOKEN"):
+    with pytest.raises(ValueError, match="strong INTERNAL_SERVICE_TOKEN"):
         Settings(
             app_env="production",
             database_url="postgresql+asyncpg://user:password@localhost:5432/test",
+        )
+
+
+def test_production_rejects_placeholder_service_secret() -> None:
+    with pytest.raises(ValueError, match="strong INTERNAL_SERVICE_TOKEN"):
+        Settings(
+            app_env="production",
+            database_url="postgresql+asyncpg://user:password@localhost:5432/test",
+            internal_service_token="govcontrol-local-internal-token-change-me",
         )
 
 

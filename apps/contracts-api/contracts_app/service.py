@@ -306,7 +306,6 @@ class ContractService:
                         Contract.end_date >= today,
                         Contract.end_date <= today + timedelta(days=30),
                     ),
-                    func.coalesce(func.sum(Contract.value).filter(active), 0),
                 ).where(Contract.tenant_id == tenant_id)
             )
         ).one()
@@ -328,7 +327,6 @@ class ContractService:
             total_contracts=int(row[0]),
             active_contracts=int(row[1]),
             expiring_within_30_days=int(row[2]),
-            total_active_value=Decimal(row[3]),
             status_counts={status.value: int(count) for status, count in status_rows},
             active_value_by_currency={
                 currency: Decimal(value) for currency, value in currency_rows

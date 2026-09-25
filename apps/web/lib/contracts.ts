@@ -30,7 +30,6 @@ export type ContractDashboard = {
   total_contracts: number;
   active_contracts: number;
   expiring_within_30_days: number;
-  total_active_value: string;
   status_counts: Partial<Record<ContractStatus, number>>;
   active_value_by_currency: Record<string, string>;
 };

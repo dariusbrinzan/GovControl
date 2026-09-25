@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 
+import { apiGet, type InstitutionDirectory } from "../../lib/api";
 import {
   contractsGet,
   contractsPatch,
@@ -114,15 +115,23 @@ function CreateContractForm({ token, onCreated }: { token: string; onCreated: ()
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [directory, setDirectory] = useState<InstitutionDirectory | null>(null);
+  useEffect(() => {
+    if (!open || directory) return;
+    void apiGet<InstitutionDirectory>("/platform/directory", token)
+      .then(setDirectory)
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Directorul instituției nu a putut fi încărcat."));
+  }, [directory, open, token]);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const entries = [...form.entries()].filter(([, value]) => value !== "");
     setSaving(true); setError(null);
     try {
-      await contractsPost("/contracts", token, Object.fromEntries(form.entries()));
+      await contractsPost("/contracts", token, Object.fromEntries(entries));
       setOpen(false); await onCreated();
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Contractul nu a putut fi creat."); }
     finally { setSaving(false); }
   };
-  return <><button className="button primary" onClick={() => setOpen(true)} type="button">Adaugă contract</button>{open ? <div className="modal-backdrop" role="presentation"><section className="connection-modal contract-modal" role="dialog" aria-modal="true" aria-labelledby="contract-create-title"><p className="eyebrow">GovContracts</p><h2 id="contract-create-title">Contract nou</h2><form className="case-form" onSubmit={submit}><label>Număr<input name="contract_number" required /></label><label className="wide">Titlu<input name="title" required /></label><label>Valoare<input min="0.01" name="value" required step="0.01" type="number" /></label><label>Monedă<input defaultValue="RON" maxLength={3} name="currency" required /></label><label>Data semnării<input name="signed_date" type="date" /></label><label>Început<input name="start_date" required type="date" /></label><label>Sfârșit<input name="end_date" required type="date" /></label><label className="wide">Descriere<textarea name="description" rows={3} /></label>{error ? <div className="inline-error wide" role="alert">{error}</div> : null}<div className="modal-actions wide"><button className="button secondary" onClick={() => setOpen(false)} type="button">Renunță</button><button className="button primary" disabled={saving} type="submit">{saving ? "Se salvează…" : "Salvează"}</button></div></form></section></div> : null}</>;
+  return <><button className="button primary" onClick={() => setOpen(true)} type="button">Adaugă contract</button>{open ? <div className="modal-backdrop" role="presentation"><section className="connection-modal contract-modal" role="dialog" aria-modal="true" aria-labelledby="contract-create-title"><p className="eyebrow">GovContracts</p><h2 id="contract-create-title">Contract nou</h2><form className="case-form" onSubmit={submit}><label>Număr<input name="contract_number" required /></label><label className="wide">Titlu<input name="title" required /></label><label>Valoare<input min="0.01" name="value" required step="0.01" type="number" /></label><label>Monedă<input defaultValue="RON" maxLength={3} name="currency" required /></label><label>Data semnării<input name="signed_date" type="date" /></label><label>Început<input name="start_date" required type="date" /></label><label>Sfârșit<input name="end_date" required type="date" /></label><label>Departament responsabil<select name="responsible_department_id"><option value="">Nerepartizat</option>{directory?.departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Responsabil<select name="responsible_user_id"><option value="">Nerepartizat</option>{directory?.users.map((item) => <option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label><label className="wide">Descriere<textarea name="description" rows={3} /></label>{error ? <div className="inline-error wide" role="alert">{error}</div> : null}<div className="modal-actions wide"><button className="button secondary" onClick={() => setOpen(false)} type="button">Renunță</button><button className="button primary" disabled={saving} type="submit">{saving ? "Se salvează…" : "Salvează"}</button></div></form></section></div> : null}</>;
 }

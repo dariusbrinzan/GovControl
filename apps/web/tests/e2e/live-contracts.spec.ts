@@ -8,7 +8,7 @@ test("fluxul GovContracts real afișează datele agregate și fișa completă", 
   const failedApiCalls: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   page.on("response", (response) => {
-    if ([8000, 8010].includes(Number(new URL(response.url()).port)) && response.status() >= 400) {
+    if (response.url().includes("/api/v1/") && response.status() >= 400) {
       failedApiCalls.push(`${response.status()} ${response.url()}`);
     }
   });
@@ -28,6 +28,11 @@ test("fluxul GovContracts real afișează datele agregate și fișa completă", 
   await expect(page.getByRole("heading", { name: "Plăți planificate" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Documente asociate" })).toBeVisible();
   await expect(page.locator('select[aria-label^="Actualizează statusul"]').first()).toBeVisible();
+  await expect(page.getByText("Departament responsabil", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Editează contract" }).click();
+  await expect(page.getByLabel("Departament responsabil")).toHaveValue(/.*/);
+  await expect(page.getByLabel("Departament responsabil").locator("option")).not.toHaveCount(1);
+  await page.getByRole("button", { name: "Renunță" }).click();
   await page.getByRole("link", { name: "Jurnal de audit" }).click();
   await expect(page.getByRole("heading", { name: "Jurnal audit GovContracts" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Request ID" })).toBeVisible();

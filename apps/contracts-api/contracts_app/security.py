@@ -1,4 +1,5 @@
 import secrets
+import uuid
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 
@@ -36,7 +37,81 @@ async def get_current_user(authorization: Annotated[str | None, Header()] = None
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication is required.")
     if response.status_code != status.HTTP_200_OK:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Identity could not be verified.")
-    return UserContext.model_validate(response.json())
+    return UserContext.model_validate(response.json()).model_copy(
+        update={"authorization": authorization}
+    )
+
+
+async def validate_responsible_assignments(
+    user: UserContext,
+    department_id: uuid.UUID | None,
+    user_id: uuid.UUID | None,
+) -> None:
+    if department_id is None and user_id is None:
+        return
+    settings = get_settings()
+    headers = {"Authorization": user.authorization}
+    request_id = current_request_id()
+    if request_id is not None:
+        headers["X-Request-ID"] = str(request_id)
+    if settings.internal_service_token is not None:
+        headers["X-Service-Token"] = settings.internal_service_token.get_secret_value()
+        path = "/internal/directory/assignments"
+        params: dict[str, str] = {}
+        if department_id is not None:
+            params["department_id"] = str(department_id)
+        if user_id is not None:
+            params["user_id"] = str(user_id)
+        try:
+            async with httpx.AsyncClient(
+                timeout=settings.platform_request_timeout_seconds
+            ) as client:
+                response = await client.get(
+                    f"{settings.platform_api_url.rstrip('/')}{path}",
+                    headers=headers,
+                    params=params,
+                )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, "Identity service is unavailable."
+            ) from exc
+        if response.status_code == status.HTTP_404_NOT_FOUND:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT,
+                "Responsible department or user is unavailable in this tenant.",
+            )
+        if response.status_code != status.HTTP_204_NO_CONTENT:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "Responsible assignment could not be verified.",
+            )
+        return
+
+    try:
+        async with httpx.AsyncClient(timeout=settings.platform_request_timeout_seconds) as client:
+            response = await client.get(
+                f"{settings.platform_api_url.rstrip('/')}/platform/directory",
+                headers=headers,
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "Identity service is unavailable."
+        ) from exc
+    if response.status_code != status.HTTP_200_OK:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Responsible assignment could not be verified.",
+        )
+    directory = response.json()
+    department_ids = {item["id"] for item in directory["departments"]}
+    user_ids = {item["id"] for item in directory["users"]}
+    if (department_id is not None and str(department_id) not in department_ids) or (
+        user_id is not None and str(user_id) not in user_ids
+    ):
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "Responsible department or user is unavailable in this tenant.",
+        )
 
 
 async def require_internal_service(

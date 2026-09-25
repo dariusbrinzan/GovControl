@@ -52,8 +52,27 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
-        if self.app_env == "production" and self.internal_service_token is None:
-            raise ValueError("INTERNAL_SERVICE_TOKEN is required in production")
+        if self.app_env != "production":
+            return self
+        service_token = (
+            self.internal_service_token.get_secret_value()
+            if self.internal_service_token is not None
+            else ""
+        )
+        if (
+            len(service_token) < 32
+            or "change-me" in service_token
+            or service_token.startswith("replace-with")
+        ):
+            raise ValueError("a strong INTERNAL_SERVICE_TOKEN is required in production")
+        if self.document_storage_backend == "s3":
+            storage_secret = self.s3_secret_key.get_secret_value()
+            if (
+                len(storage_secret) < 32
+                or "change-me" in storage_secret
+                or storage_secret.startswith("replace-with")
+            ):
+                raise ValueError("a strong S3_SECRET_KEY is required in production")
         return self
 
 

@@ -8,7 +8,7 @@ from starlette.datastructures import Headers, MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 request_id_context: ContextVar[uuid.UUID | None] = ContextVar("request_id", default=None)
-logger = logging.getLogger("govcontracts.http")
+logger = logging.getLogger("uvicorn.error")
 
 
 def current_request_id() -> uuid.UUID | None:

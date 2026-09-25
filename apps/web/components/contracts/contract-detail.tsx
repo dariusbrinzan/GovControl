@@ -8,6 +8,7 @@ import {
   apiGet,
   apiUpload,
   type DocumentRecord,
+  type InstitutionDirectory,
 } from "../../lib/api";
 import {
   contractsGet,
@@ -49,17 +50,19 @@ export function ContractDetailView({ id }: { id: string }) {
   const { token, ready } = useSession();
   const [detail, setDetail] = useState<ContractDetail | null>(null);
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
+  const [directory, setDirectory] = useState<InstitutionDirectory | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(async () => {
     if (!token) return;
     setLoading(true); setError(null);
     try {
-      const [contract, contractDocuments] = await Promise.all([
+      const [contract, contractDocuments, institutionDirectory] = await Promise.all([
         contractsGet<ContractDetail>(`/contracts/${id}/overview`, token),
         apiGet<DocumentRecord[]>(`/documents?entity_type=Contract&entity_id=${id}`, token),
+        apiGet<InstitutionDirectory>("/platform/directory", token),
       ]);
-      setDetail(contract); setDocuments(contractDocuments);
+      setDetail(contract); setDocuments(contractDocuments); setDirectory(institutionDirectory);
     }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Fișa nu a putut fi încărcată."); }
     finally { setLoading(false); }
@@ -70,10 +73,12 @@ export function ContractDetailView({ id }: { id: string }) {
   if (error) return <ErrorState message={error} retry={() => void load()} />;
   if (!detail) return <EmptyState title="Fișa nu este disponibilă" description="Conectează aplicația sau revino la registru." icon={<Archive size={25} />} />;
   const item = detail.contract;
+  const responsibleDepartment = directory?.departments.find((entry) => entry.id === item.responsible_department_id);
+  const responsibleUser = directory?.users.find((entry) => entry.id === item.responsible_user_id);
   return <>
-    <PageHeader eyebrow="Fișă contractuală" title={item.contract_number} description={item.title} actions={<><EditContractForm contract={item} token={token} onChanged={load} /><Link className="button secondary" href="/contracts/registry">Înapoi la registru</Link></>} />
+    <PageHeader eyebrow="Fișă contractuală" title={item.contract_number} description={item.title} actions={<><EditContractForm contract={item} directory={directory} token={token} onChanged={load} /><Link className="button secondary" href="/contracts/registry">Înapoi la registru</Link></>} />
     <section className="detail-grid">
-      <article className="detail-card"><h2>Date generale</h2><dl><div><dt>Status</dt><dd><StatusBadge status={item.status} /></dd></div><div><dt>Valoare</dt><dd>{money.format(Number(item.value))} {item.currency}</dd></div><div><dt>Perioadă</dt><dd>{formatDate(item.start_date)} – {formatDate(item.end_date)}</dd></div><div><dt>Semnat</dt><dd>{formatDate(item.signed_date)}</dd></div></dl></article>
+      <article className="detail-card"><h2>Date generale</h2><dl><div><dt>Status</dt><dd><StatusBadge status={item.status} /></dd></div><div><dt>Valoare</dt><dd>{money.format(Number(item.value))} {item.currency}</dd></div><div><dt>Perioadă</dt><dd>{formatDate(item.start_date)} – {formatDate(item.end_date)}</dd></div><div><dt>Semnat</dt><dd>{formatDate(item.signed_date)}</dd></div><div><dt>Departament responsabil</dt><dd>{responsibleDepartment?.name ?? "Nerepartizat"}</dd></div><div><dt>Responsabil</dt><dd>{responsibleUser?.display_name ?? "Nerepartizat"}</dd></div></dl></article>
       <article className="detail-card"><h2>Părți contractuale</h2><RelatedList empty="Nu există părți asociate." items={detail.parties.map((party) => ({ id: party.id, title: party.name, detail: `${party.role ?? party.party_type} · ${party.registration_number ?? "fără identificator"}` }))} icon={<UsersRound size={17} />} /><RelatedForm kind="parties" contractId={id} token={token} onCreated={load} /></article>
       <article className="detail-card span-two"><h2>Acte adiționale</h2><RelatedList empty="Nu există acte adiționale." items={detail.amendments.map((record) => ({ id: record.id, title: record.amendment_number, detail: `${formatDate(record.signed_date)} · ${record.description}` }))} icon={<BriefcaseBusiness size={17} />} /><RelatedForm kind="amendments" contractId={id} token={token} onCreated={load} /></article>
       <article className="detail-card"><h2>Jaloane și termene</h2><WorkflowList kind="milestones" contractId={id} token={token} onChanged={load} empty="Nu există jaloane." items={detail.milestones.map((record) => ({ id: record.id, title: record.title, detail: formatDate(record.due_date), status: record.status, transitions: milestoneTransitions[record.status] }))} icon={<CalendarClock size={17} />} /><RelatedForm kind="milestones" contractId={id} token={token} onCreated={load} /></article>
@@ -84,19 +89,25 @@ export function ContractDetailView({ id }: { id: string }) {
   </>;
 }
 
-function EditContractForm({ contract, token, onChanged }: { contract: ContractRecord; token: string; onChanged: () => Promise<void> }) {
+function EditContractForm({ contract, directory, token, onChanged }: { contract: ContractRecord; directory: InstitutionDirectory | null; token: string; onChanged: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const entries = [...new FormData(event.currentTarget).entries()].filter(([, value]) => value !== "");
+    const values = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const payload = {
+      ...values,
+      signed_date: values.signed_date || null,
+      responsible_department_id: values.responsible_department_id || null,
+      responsible_user_id: values.responsible_user_id || null,
+    };
     setSaving(true); setError(null);
-    try { await contractsPatch(`/contracts/${contract.id}`, token, Object.fromEntries(entries)); setOpen(false); await onChanged(); }
+    try { await contractsPatch(`/contracts/${contract.id}`, token, payload); setOpen(false); await onChanged(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Contractul nu a putut fi actualizat."); }
     finally { setSaving(false); }
   };
-  return <><button className="button primary" onClick={() => setOpen(true)} type="button">Editează contract</button>{open ? <div className="modal-backdrop" role="presentation"><section className="connection-modal contract-modal" role="dialog" aria-modal="true" aria-labelledby="contract-edit-title"><p className="eyebrow">GovContracts</p><h2 id="contract-edit-title">Editează contractul</h2><form className="case-form" onSubmit={submit}><label className="wide">Titlu<input defaultValue={contract.title} name="title" required /></label><label>Valoare<input defaultValue={contract.value} min="0.01" name="value" required step="0.01" type="number" /></label><label>Monedă<input defaultValue={contract.currency} maxLength={3} name="currency" required /></label><label>Data semnării<input defaultValue={contract.signed_date ?? ""} name="signed_date" type="date" /></label><label>Început<input defaultValue={contract.start_date} name="start_date" required type="date" /></label><label>Sfârșit<input defaultValue={contract.end_date} name="end_date" required type="date" /></label><label className="wide">Descriere<textarea defaultValue={contract.description ?? ""} name="description" rows={3} /></label>{error ? <div className="inline-error wide" role="alert">{error}</div> : null}<div className="modal-actions wide"><button className="button secondary" onClick={() => setOpen(false)} type="button">Renunță</button><button className="button primary" disabled={saving} type="submit">{saving ? "Se salvează…" : "Salvează modificările"}</button></div></form></section></div> : null}</>;
+  return <><button className="button primary" onClick={() => setOpen(true)} type="button">Editează contract</button>{open ? <div className="modal-backdrop" role="presentation"><section className="connection-modal contract-modal" role="dialog" aria-modal="true" aria-labelledby="contract-edit-title"><p className="eyebrow">GovContracts</p><h2 id="contract-edit-title">Editează contractul</h2><form className="case-form" onSubmit={submit}><label className="wide">Titlu<input defaultValue={contract.title} name="title" required /></label><label>Valoare<input defaultValue={contract.value} min="0.01" name="value" required step="0.01" type="number" /></label><label>Monedă<input defaultValue={contract.currency} maxLength={3} name="currency" required /></label><label>Data semnării<input defaultValue={contract.signed_date ?? ""} name="signed_date" type="date" /></label><label>Început<input defaultValue={contract.start_date} name="start_date" required type="date" /></label><label>Sfârșit<input defaultValue={contract.end_date} name="end_date" required type="date" /></label><label>Departament responsabil<select defaultValue={contract.responsible_department_id ?? ""} name="responsible_department_id"><option value="">Nerepartizat</option>{directory?.departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label>Responsabil<select defaultValue={contract.responsible_user_id ?? ""} name="responsible_user_id"><option value="">Nerepartizat</option>{directory?.users.map((item) => <option key={item.id} value={item.id}>{item.display_name}</option>)}</select></label><label className="wide">Descriere<textarea defaultValue={contract.description ?? ""} name="description" rows={3} /></label>{error ? <div className="inline-error wide" role="alert">{error}</div> : null}<div className="modal-actions wide"><button className="button secondary" onClick={() => setOpen(false)} type="button">Renunță</button><button className="button primary" disabled={saving} type="submit">{saving ? "Se salvează…" : "Salvează modificările"}</button></div></form></section></div> : null}</>;
 }
 
 function DocumentSection({ contractId, documents, token, onChanged }: { contractId: string; documents: DocumentRecord[]; token: string; onChanged: () => Promise<void> }) {

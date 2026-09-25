@@ -32,7 +32,12 @@ from contracts_app.schemas import (
     PaymentResponse,
     PaymentStatusChange,
 )
-from contracts_app.security import ContractAuditor, ContractManager, ContractReporter
+from contracts_app.security import (
+    ContractAuditor,
+    ContractManager,
+    ContractReporter,
+    validate_responsible_assignments,
+)
 from contracts_app.service import (
     ContractConflictError,
     ContractNotFoundError,
@@ -69,6 +74,9 @@ async def list_contracts(
 async def create_contract(
     data: ContractCreate, user: ContractManager, session: Session
 ) -> ContractResponse:
+    await validate_responsible_assignments(
+        user, data.responsible_department_id, data.responsible_user_id
+    )
     try:
         item = await ContractService(session).create(user.tenant_id, user.id, data)
     except ContractConflictError as exc:
@@ -364,6 +372,13 @@ async def update_contract(
     user: ContractManager,
     session: Session,
 ) -> ContractResponse:
+    await validate_responsible_assignments(
+        user,
+        data.responsible_department_id
+        if "responsible_department_id" in data.model_fields_set
+        else None,
+        data.responsible_user_id if "responsible_user_id" in data.model_fields_set else None,
+    )
     try:
         item = await ContractService(session).update(user.tenant_id, user.id, contract_id, data)
     except (ContractNotFoundError, ContractConflictError) as exc:

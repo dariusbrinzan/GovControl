@@ -30,6 +30,7 @@ class UserContext(BaseModel):
     display_name: str
     roles: list[str]
     permissions: list[str]
+    authorization: str = Field(default="", exclude=True, repr=False)
 
 
 class ContractCreate(BaseModel):
@@ -124,7 +125,6 @@ class ContractDashboard(BaseModel):
     total_contracts: int
     active_contracts: int
     expiring_within_30_days: int
-    total_active_value: Decimal
     status_counts: dict[str, int]
     active_value_by_currency: dict[str, Decimal]
 

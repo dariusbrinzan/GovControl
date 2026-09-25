@@ -1,12 +1,15 @@
 import asyncio
 import json
+import logging
 import signal
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from redis.asyncio import Redis
+from redis.exceptions import RedisError
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 
 from contracts_app.config import get_settings
 from contracts_app.database import session_factory
@@ -20,6 +23,12 @@ from contracts_app.models import (
     OutboxEvent,
     PaymentStatus,
 )
+
+logger = logging.getLogger("govcontracts.worker")
+
+
+def log_event(event: str, **details: Any) -> None:
+    logger.info(json.dumps({"event": event, "service": "govcontracts-worker", **details}))
 
 
 def event_envelope(event: OutboxEvent) -> dict[str, Any]:
@@ -160,15 +169,32 @@ async def run_worker() -> None:
         loop.add_signal_handler(signum, stopped.set)
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     last_reminder_scan = 0.0
+    log_event("worker_started", stream=settings.event_stream_name)
     try:
         while not stopped.is_set():
-            current_time = loop.time()
-            if current_time - last_reminder_scan >= settings.reminder_scan_interval_seconds:
-                await create_due_reminders(date.today())
-                last_reminder_scan = current_time
-            published = await publish_batch(
-                redis, settings.outbox_batch_size, settings.event_stream_name
-            )
+            try:
+                current_time = loop.time()
+                if current_time - last_reminder_scan >= settings.reminder_scan_interval_seconds:
+                    reminders = await create_due_reminders(date.today())
+                    last_reminder_scan = current_time
+                    if reminders:
+                        log_event("reminders_scanned", candidates=reminders)
+                published = await publish_batch(
+                    redis, settings.outbox_batch_size, settings.event_stream_name
+                )
+                if published:
+                    log_event("outbox_published", count=published)
+            except (RedisError, SQLAlchemyError) as exc:
+                logger.exception(
+                    json.dumps(
+                        {
+                            "event": "worker_dependency_error",
+                            "service": "govcontracts-worker",
+                            "error_type": type(exc).__name__,
+                        }
+                    )
+                )
+                published = 0
             if published == 0:
                 try:
                     await asyncio.wait_for(
@@ -178,9 +204,12 @@ async def run_worker() -> None:
                     pass
     finally:
         await redis.aclose()
+        log_event("worker_stopped")
 
 
 def main() -> None:
+    settings = get_settings()
+    logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
     asyncio.run(run_worker())
 
 

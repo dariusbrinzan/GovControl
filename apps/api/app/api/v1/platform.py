@@ -3,10 +3,16 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.core.security import AuthenticatedUser, SessionDependency, require_permission
+from app.core.security import (
+    AuthenticatedUser,
+    SessionDependency,
+    require_any_permission,
+    require_permission,
+)
 from app.schemas.platform import (
     DepartmentCreate,
     DepartmentResponse,
+    InstitutionDirectoryResponse,
     RoleResponse,
     TenantResponse,
     UserCreate,
@@ -26,6 +32,27 @@ PlatformManagerDependency = Annotated[
     AuthenticatedUser,
     Depends(require_permission("platform.manage")),
 ]
+DirectoryReaderDependency = Annotated[
+    AuthenticatedUser,
+    Depends(
+        require_any_permission("platform.manage", "legal.manage", "contracts.manage")
+    ),
+]
+
+
+@router.get("/directory", response_model=InstitutionDirectoryResponse)
+async def institution_directory(
+    current_user: DirectoryReaderDependency,
+    session: SessionDependency,
+) -> InstitutionDirectoryResponse:
+    """Return tenant-scoped department and active-user labels for assignment controls."""
+    service = PlatformService(session)
+    departments = await service.list_departments(current_user.tenant_id)
+    users = await service.list_users(current_user.tenant_id)
+    return InstitutionDirectoryResponse(
+        departments=[DepartmentResponse.model_validate(item) for item in departments],
+        users=[UserResponse.model_validate(item) for item in users if item.is_active],
+    )
 
 
 @router.get("/tenant", response_model=TenantResponse)

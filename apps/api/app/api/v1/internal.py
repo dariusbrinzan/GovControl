@@ -1,7 +1,14 @@
-from fastapi import APIRouter
+import uuid
+
+from fastapi import APIRouter, HTTPException, status
 
 from app.api.v1.auth import CurrentUserResponse
-from app.core.security import CurrentUserDependency, InternalServiceDependency
+from app.core.security import (
+    CurrentUserDependency,
+    InternalServiceDependency,
+    SessionDependency,
+)
+from app.services.platform import PlatformService
 
 router = APIRouter(prefix="/internal", include_in_schema=False)
 
@@ -20,3 +27,21 @@ async def internal_auth_context(
         roles=sorted(current_user.roles),
         permissions=sorted(current_user.permissions),
     )
+
+
+@router.get("/directory/assignments", status_code=status.HTTP_204_NO_CONTENT)
+async def validate_directory_assignments(
+    _: InternalServiceDependency,
+    current_user: CurrentUserDependency,
+    session: SessionDependency,
+    department_id: uuid.UUID | None = None,
+    user_id: uuid.UUID | None = None,
+) -> None:
+    """Validate opaque organizational references inside the caller's tenant."""
+    if not await PlatformService(session).assignments_exist(
+        current_user.tenant_id, department_id, user_id
+    ):
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "Department or user is unavailable in this tenant.",
+        )

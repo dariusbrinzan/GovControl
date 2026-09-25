@@ -41,7 +41,6 @@ test("GovContracts afișează dashboard-ul și registrul din serviciul separat",
         total_contracts: 1,
         active_contracts: 1,
         expiring_within_30_days: 0,
-        total_active_value: "250000.00",
         status_counts: { ACTIVE: 1 },
         active_value_by_currency: { RON: "250000.00" },
       } });

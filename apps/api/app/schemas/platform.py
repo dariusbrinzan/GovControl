@@ -85,3 +85,8 @@ class UserResponse(BaseModel):
 
 class UserRoleAssign(BaseModel):
     role_id: uuid.UUID
+
+
+class InstitutionDirectoryResponse(BaseModel):
+    departments: list[DepartmentResponse]
+    users: list[UserResponse]

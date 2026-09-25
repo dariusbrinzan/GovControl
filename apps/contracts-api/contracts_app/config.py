@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     )
 
     app_env: Literal["development", "test", "production"] = "development"
+    log_level: str = "INFO"
     contracts_database_url: str = Field(
         validation_alias=AliasChoices("CONTRACTS_DATABASE_URL", "DATABASE_URL")
     )
@@ -45,8 +46,19 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
-        if self.app_env == "production" and self.internal_service_token is None:
-            raise ValueError("INTERNAL_SERVICE_TOKEN is required in production")
+        if self.app_env != "production":
+            return self
+        service_token = (
+            self.internal_service_token.get_secret_value()
+            if self.internal_service_token is not None
+            else ""
+        )
+        if (
+            len(service_token) < 32
+            or "change-me" in service_token
+            or service_token.startswith("replace-with")
+        ):
+            raise ValueError("a strong INTERNAL_SERVICE_TOKEN is required in production")
         return self
 
 

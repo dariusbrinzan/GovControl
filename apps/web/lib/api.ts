@@ -97,6 +97,11 @@ export type AuthenticatedUser = {
   permissions: string[];
 };
 
+export type InstitutionDirectory = {
+  departments: Array<{ id: string; name: string; code: string | null; parent_department_id: string | null }>;
+  users: Array<{ id: string; display_name: string; email: string; department_id: string | null }>;
+};
+
 export type CountDataPoint = { key: string; label: string; value: number };
 export type MonthlyActivityPoint = {
   month: string;

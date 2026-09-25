@@ -10,8 +10,7 @@ from contracts_app.api import router
 from contracts_app.config import get_settings
 from contracts_app.database import session_factory
 from contracts_app.internal import router as internal_router
-from contracts_app.observability import RequestContextMiddleware
-from contracts_app.observability import current_request_id
+from contracts_app.observability import RequestContextMiddleware, current_request_id
 
 
 def create_application() -> FastAPI:

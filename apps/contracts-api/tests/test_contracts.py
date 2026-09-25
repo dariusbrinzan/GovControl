@@ -80,11 +80,20 @@ def test_outbox_envelope_contains_idempotency_and_tenant_context() -> None:
 
 
 def test_production_requires_internal_service_secret() -> None:
-    with pytest.raises(ValidationError, match="INTERNAL_SERVICE_TOKEN"):
+    with pytest.raises(ValidationError, match="strong INTERNAL_SERVICE_TOKEN"):
         Settings(
             app_env="production",
             contracts_database_url="postgresql+asyncpg://user:password@localhost:5432/test",
             internal_service_token=None,
+        )
+
+
+def test_production_rejects_placeholder_service_secret() -> None:
+    with pytest.raises(ValidationError, match="strong INTERNAL_SERVICE_TOKEN"):
+        Settings(
+            app_env="production",
+            contracts_database_url="postgresql+asyncpg://user:password@localhost:5432/test",
+            internal_service_token="govcontrol-local-internal-token-change-me",
         )
 
 

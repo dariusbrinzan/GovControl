@@ -102,6 +102,24 @@ class PlatformService:
     async def list_users(self, tenant_id: uuid.UUID) -> list[User]:
         return await self._user_repository.list_for_tenant(tenant_id)
 
+    async def assignments_exist(
+        self,
+        tenant_id: uuid.UUID,
+        department_id: uuid.UUID | None,
+        user_id: uuid.UUID | None,
+    ) -> bool:
+        if department_id is not None:
+            department = await self._department_repository.get_by_id_for_tenant(
+                department_id, tenant_id
+            )
+            if department is None:
+                return False
+        if user_id is not None:
+            user = await self._user_repository.get_by_id_for_tenant(user_id, tenant_id)
+            if user is None or not user.is_active:
+                return False
+        return True
+
     async def create_user(
         self,
         *,

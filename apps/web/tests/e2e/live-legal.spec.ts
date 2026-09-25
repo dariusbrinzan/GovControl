@@ -8,7 +8,7 @@ test("fluxul GovLegal real păstrează dashboardul, registrul și fișa dosarulu
   const failedApiCalls: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   page.on("response", (response) => {
-    if (new URL(response.url()).port === "8000" && response.status() >= 400) {
+    if (response.url().includes("/api/v1/") && response.status() >= 400) {
       failedApiCalls.push(`${response.status()} ${response.url()}`);
     }
   });
