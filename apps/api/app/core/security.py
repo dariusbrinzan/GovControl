@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +34,25 @@ class AuthenticatedUser:
 SettingsDependency = Annotated[Settings, Depends(get_settings)]
 SessionDependency = Annotated[AsyncSession, Depends(get_db_session)]
 CredentialsDependency = Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)]
+ServiceTokenHeader = Annotated[str | None, Header(alias="X-Service-Token")]
+
+
+def require_internal_service(
+    settings: SettingsDependency, service_token: ServiceTokenHeader = None
+) -> None:
+    configured_token = settings.internal_service_token
+    if configured_token is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Internal service authentication is not configured.",
+        )
+    if service_token is None or not secrets.compare_digest(
+        service_token, configured_token.get_secret_value()
+    ):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid service credentials.")
+
+
+InternalServiceDependency = Annotated[None, Depends(require_internal_service)]
 
 
 async def get_current_user(
@@ -113,6 +132,22 @@ def require_permission(
 
     async def permission_dependency(current_user: CurrentUserDependency) -> AuthenticatedUser:
         if permission not in current_user.permissions:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You do not have permission to perform this action.",
+            )
+        return current_user
+
+    return permission_dependency
+
+
+def require_any_permission(
+    *permissions: str,
+) -> Callable[[AuthenticatedUser], Awaitable[AuthenticatedUser]]:
+    """Authorize a shared capability exposed to more than one bounded context."""
+
+    async def permission_dependency(current_user: CurrentUserDependency) -> AuthenticatedUser:
+        if current_user.permissions.isdisjoint(permissions):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have permission to perform this action.",

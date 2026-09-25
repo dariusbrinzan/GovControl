@@ -10,6 +10,7 @@ class DocumentEntityType(StrEnum):
     COURT_DECISION = "CourtDecision"
     LEGAL_OBLIGATION = "LegalObligation"
     ENFORCEMENT_PROCEEDING = "EnforcementProceeding"
+    CONTRACT = "Contract"
 
 
 class DocumentResponse(BaseModel):

@@ -28,6 +28,8 @@ def include_object(
 ) -> bool:
     """Keep PostgreSQL-specific search indexes managed by their explicit migration."""
     del object_, reflected, compare_to
+    if type_ == "table" and name == "alembic_version_contracts":
+        return False
     return not (type_ == "index" and name is not None and name.endswith("_trgm"))
 
 

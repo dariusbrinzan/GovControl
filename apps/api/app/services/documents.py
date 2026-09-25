@@ -3,13 +3,14 @@ import uuid
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.models.document import Document
 from app.repositories.document import DocumentRepository
 from app.repositories.legal import LegalRepository
 from app.schemas.document import DocumentEntityType
 from app.services.audit import AuditService
-from app.services.storage import LocalStorage
+from app.services.storage import DocumentStorage, StorageError
 
 
 class DocumentResourceNotFoundError(Exception):
@@ -21,7 +22,7 @@ class DocumentStorageError(Exception):
 
 
 class DocumentService:
-    def __init__(self, session: AsyncSession, storage: LocalStorage) -> None:
+    def __init__(self, session: AsyncSession, storage: DocumentStorage) -> None:
         self.session = session
         self.storage = storage
         self.repo = DocumentRepository(session)
@@ -55,7 +56,13 @@ class DocumentService:
         )
         self.session.add(document)
         await self.session.flush()
-        storage_key = self.storage.write(str(tenant_id), str(document.id), content)
+        try:
+            storage_key = await run_in_threadpool(
+                self.storage.write, str(tenant_id), str(document.id), content
+            )
+        except (OSError, StorageError) as exc:
+            await self.session.rollback()
+            raise DocumentStorageError from exc
         document.storage_key = storage_key
         self.audit.record_created(
             tenant_id=tenant_id,
@@ -68,7 +75,7 @@ class DocumentService:
             await self.session.commit()
         except IntegrityError as exc:
             await self.session.rollback()
-            self.storage.delete(storage_key)
+            await run_in_threadpool(self.storage.delete, storage_key)
             raise DocumentStorageError from exc
         await self.session.refresh(document)
         return document
@@ -82,15 +89,16 @@ class DocumentService:
     async def list_for_tenant(self, tenant_id: uuid.UUID) -> list[Document]:
         return await self.repo.list_for_tenant(tenant_id)
 
-    async def download_path(
+    async def download(
         self, tenant_id: uuid.UUID, document_id: uuid.UUID
-    ) -> tuple[Document, str]:
+    ) -> tuple[Document, bytes]:
         document = await self.repo.get_by_id_for_tenant(document_id, tenant_id)
         if document is None:
             raise DocumentResourceNotFoundError
         try:
-            return document, str(self.storage.read(document.storage_key))
-        except FileNotFoundError as exc:
+            content = await run_in_threadpool(self.storage.read_bytes, document.storage_key)
+            return document, content
+        except (FileNotFoundError, OSError, StorageError) as exc:
             raise DocumentStorageError from exc
 
     async def _ensure_entity_exists(
@@ -102,6 +110,10 @@ class DocumentService:
             exists = await self.legal.decision(entity_id, tenant_id) is not None
         elif entity_type == DocumentEntityType.LEGAL_OBLIGATION:
             exists = await self.legal.obligation(entity_id, tenant_id) is not None
+        elif entity_type == DocumentEntityType.CONTRACT:
+            # Contract ownership is verified over HTTP by the API boundary. This service must
+            # never query the independently owned GovContracts schema.
+            return
         else:
             exists = await self.legal.enforcement(entity_id, tenant_id) is not None
         if not exists:

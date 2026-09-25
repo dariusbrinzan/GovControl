@@ -60,6 +60,8 @@ const contractGroups: NavigationGroup[] = [
     items: [
       { href: "/contracts", label: "Panou de control", icon: LayoutDashboard, exact: true, permission: "contracts.report" },
       { href: "/contracts/registry", label: "Registru contracte", icon: BriefcaseBusiness, permission: "contracts.manage" },
+      { href: "/contracts/notifications", label: "Notificări", icon: Bell, permission: "contracts.report" },
+      { href: "/contracts/audit", label: "Jurnal de audit", icon: ShieldCheck, permission: "audit.view" },
     ],
   },
 ];
@@ -152,7 +154,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <nav className="breadcrumbs" aria-label="Breadcrumb"><Link href={moduleRoot}>{moduleName}</Link><span>/</span><strong>{currentName}</strong></nav>
           <form className="global-search" onSubmit={submitSearch} role="search"><Search size={17} /><input aria-label={`Caută în ${moduleName}`} minLength={2} onChange={(event) => setQuery(event.target.value)} placeholder={contractModule ? "Caută număr, titlu…" : "Caută dosar, obligație…"} value={query} /><kbd>⌘ K</kbd></form>
           <div className="topbar-actions">
-            <Link className="icon-button" href="/legal/notifications" aria-label="Notificări"><Bell size={19} /></Link>
+            <Link className="icon-button" href={contractModule ? "/contracts/notifications" : "/legal/notifications"} aria-label="Notificări"><Bell size={19} /></Link>
             <button className="profile-button" onClick={() => setShowConnection(true)} type="button"><span className="avatar"><UserRound size={17} /></span><span className="profile-copy"><strong>{user?.display_name ?? "Conectare"}</strong><small>{user?.roles[0]?.replaceAll("_", " ") ?? "Mediu local"}</small></span><ChevronDown size={15} /></button>
           </div>
         </header>

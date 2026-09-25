@@ -225,6 +225,7 @@ class ContractAuditEvent(Base):
     entity_type: Mapped[str] = mapped_column(String(100), nullable=False)
     entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    request_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -246,3 +247,30 @@ class OutboxEvent(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ContractNotification(Base):
+    __tablename__ = "notifications"
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "entity_type",
+            "entity_id",
+            "notification_type",
+            name="uq_contract_notifications_business_key",
+        ),
+        Index("ix_contract_notifications_tenant_read", "tenant_id", "read_at"),
+        {"schema": "contracts"},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    notification_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    due_date: Mapped[date | None] = mapped_column(Date)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

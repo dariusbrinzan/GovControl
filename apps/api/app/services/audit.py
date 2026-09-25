@@ -3,6 +3,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.observability import current_request_id
 from app.models.audit import AuditEvent
 
 
@@ -49,5 +50,6 @@ class AuditService:
                 entity_type=entity_type,
                 entity_id=entity_id,
                 new_value=new_value,
+                request_id=current_request_id(),
             )
         )
