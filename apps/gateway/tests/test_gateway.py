@@ -14,7 +14,12 @@ USER = {
     "email": "admin@govcontrol.local",
     "display_name": "Admin",
     "roles": ["platform_admin"],
-    "permissions": ["legal.manage", "contracts.manage"],
+    "permissions": [
+        "legal.manage",
+        "contracts.manage",
+        "documents.read",
+        "documents.upload",
+    ],
 }
 
 
@@ -24,6 +29,8 @@ async def test_local_login_proxy_csrf_request_id_and_logout(
 ) -> None:
     monkeypatch.setenv("DEV_AUTH_TOKEN", "server-only-development-token")
     monkeypatch.setenv("RATE_LIMIT_REQUESTS", "100")
+    monkeypatch.setenv("MAX_REQUEST_BODY_BYTES", "1024")
+    monkeypatch.setenv("MAX_DOCUMENT_UPLOAD_BYTES", "1024")
     get_settings.cache_clear()
     observed_headers: list[httpx.Headers] = []
 
@@ -49,6 +56,18 @@ async def test_local_login_proxy_csrf_request_id_and_logout(
             assert login.status_code == 200
             csrf = login.json()["csrf_token"]
             assert "httponly" in login.headers["set-cookie"].lower()
+            preflight = await client.options(
+                "/api/v1/documents",
+                headers={
+                    "Origin": "http://localhost:3000",
+                    "Access-Control-Request-Method": "POST",
+                    "Access-Control-Request-Headers": "idempotency-key,x-csrf-token",
+                },
+            )
+            assert preflight.status_code == 200
+            assert "idempotency-key" in preflight.headers[
+                "access-control-allow-headers"
+            ].lower()
             foreign_origin = await client.post(
                 "/auth/local/login", headers={"Origin": "https://attacker.example"}
             )
@@ -74,6 +93,28 @@ async def test_local_login_proxy_csrf_request_id_and_logout(
             assert observed_headers[-1]["x-request-id"] == "11111111-1111-1111-1111-111111111111"
             assert "x-tenant-id" not in observed_headers[-1]
             assert observed_headers[-1]["authorization"].startswith("Bearer eyJ")
+
+            documents_response = await client.post(
+                "/api/v1/documents",
+                headers={
+                    "X-CSRF-Token": csrf,
+                    "X-Tenant-ID": "attacker-tenant",
+                    "Idempotency-Key": "gateway-forwarding-test",
+                },
+                content=b"streamed multipart placeholder",
+            )
+            assert documents_response.status_code == 200
+            assert observed_headers[-1]["idempotency-key"] == "gateway-forwarding-test"
+            assert "x-tenant-id" not in observed_headers[-1]
+            assert observed_headers[-1]["authorization"].startswith("Bearer eyJ")
+
+            oversized = await client.post(
+                "/api/v1/documents",
+                headers={"X-CSRF-Token": csrf},
+                content=b"x" * 1025,
+            )
+            assert oversized.status_code == 413
+            assert oversized.json() == {"detail": "Request body is too large."}
 
             rejected = await client.patch(
                 "/api/v1/govcontracts/contracts/00000000-0000-0000-0000-000000000003",

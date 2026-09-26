@@ -2,7 +2,7 @@
 GovControl – Operational Risk Platform for Public Administration
 
 The repository contains independently runnable application boundaries: the API gateway/BFF,
-Platform/GovLegal, the shared Next.js portal and GovContracts. See
+Platform/GovLegal, GovContracts, GovDocuments and the shared Next.js portal. See
 [`docs/architecture.md`](docs/architecture.md) for ownership and communication rules.
 The reproducible local deployment procedure is documented in
 [`docs/local-deployment.md`](docs/local-deployment.md).
@@ -91,6 +91,7 @@ Apply the committed Alembic migrations to the local PostgreSQL container with:
 ```bash
 make db-migrate
 make contracts-migrate
+make documents-migrate
 ```
 
 Schema changes must be made through a new Alembic migration; do not modify the
@@ -138,8 +139,9 @@ paths start with `/api/v1/platform`; upstream paths shown below remain internal 
 
 ## GovLegal endpoints
 
-Users with `legal.manage` can manage legal cases, decisions, obligations, enforcement proceedings,
-penalty rules and documents. All records are filtered by the tenant established by the backend.
+Users with `legal.manage` can manage legal cases, decisions, obligations, enforcement proceedings
+and penalty rules. Documents are authorized with dedicated `documents.*` permissions. All records
+are filtered by the tenant established by the backend.
 
 - `GET, POST /api/v1/legal/cases`
 - `GET /api/v1/legal/cases/{id}`
@@ -149,7 +151,7 @@ penalty rules and documents. All records are filtered by the tenant established 
 - `GET /api/v1/legal/obligations/{id}`
 - `GET, POST /api/v1/legal/enforcements`
 - `GET, POST /api/v1/legal/penalties/rules`; `GET /api/v1/legal/penalties/rules/{id}/exposure`
-- `GET, POST /api/v1/documents`; `GET /api/v1/documents/{id}/download`
+- GovLegal document views call the independent `/api/v1/documents` Gateway capability.
 - `GET /api/v1/notifications`; `PATCH /api/v1/notifications/{id}/read`
 - `POST /api/v1/notifications/dispatch/deadline-reminders`
 - `GET /api/v1/search/legal` and `GET /api/v1/audit/events`
@@ -190,26 +192,42 @@ mutation writes a local audit event and a versioned outbox event in the same tra
 Run the publisher locally with `make contracts-worker`. It delivers pending outbox messages to the
 `govcontrol.events` Redis Stream using an at-least-once delivery model.
 
+## GovDocuments endpoints
+
+GovDocuments is independently runnable on internal port `8020`, owns PostgreSQL schema `documents`
+and is the only service allowed to access document objects. Browser traffic always uses Gateway.
+
+- `GET, POST /api/v1/documents` for pagination/search/filter and streaming upload;
+- `GET /api/v1/documents/{id}` and `/versions`;
+- `POST /api/v1/documents/{id}/versions` with `If-Match`;
+- `GET /api/v1/documents/{id}/download` for streamed available content;
+- `PATCH /api/v1/documents/{id}` with optimistic ETag control;
+- link/unlink, archive, soft-delete, restore and audit subresources.
+
+The upload worker supports quarantine/ClamAV scanning and publishes a transactional outbox to the
+shared Redis Stream. See [`docs/govdocuments.md`](docs/govdocuments.md) for the full HTTP/event
+contract, retention, recovery, migration rollback and local performance observations.
+
 ## Containers
 
-`docker compose up --build` starts PostgreSQL, Redis, S3-compatible object storage, both APIs, the
-gateway and the Next.js interface. One-shot migration containers apply both independent Alembic
-chains before the corresponding APIs and worker are allowed to start.
-Use `make db-migrate` and `make contracts-migrate` when running the APIs directly on the host.
+`docker compose up --build` starts PostgreSQL, Redis, S3-compatible object storage, all APIs, the
+gateway and the Next.js interface. One-shot migration containers apply the three independent
+Alembic chains before the corresponding APIs and workers are allowed to start.
+Use `make db-migrate`, `make contracts-migrate` and `make documents-migrate` when running directly.
 For infrastructure-only local development, use `make platform-up`.
 The public application ports default to `8080` for the gateway and `3000` for the portal. Platform
 and GovContracts have no host ports in the normal Compose topology. Use `make stack-up-debug` to
 bind their debugging ports to localhost explicitly.
 
-The API uses filesystem document storage when run directly (`DOCUMENT_STORAGE_BACKEND=local`).
-Docker Compose overrides it with `s3` and stores objects in the persistent SeaweedFS volume.
-The application only depends on the standard S3 interface, so the local object store can later be
-replaced through environment configuration. No Kubernetes or Helm manifests are required for this
+GovDocuments uses S3-compatible storage and stores local objects in the persistent SeaweedFS
+volume. It depends only on the standard S3 interface, so the provider can later be replaced through
+environment configuration. No Kubernetes or Helm manifests are required for this
 local setup; the containers remain portable through environment-only configuration, independent
 health/readiness probes and external state.
 
 The portal calls only `http://127.0.0.1:8080`. Platform requests use the
-`/api/v1/platform/*` gateway prefix and GovContracts requests use `/api/v1/govcontracts/*`.
+`/api/v1/platform/*` prefix, GovContracts uses `/api/v1/govcontracts/*`, and GovDocuments uses the
+explicit `/api/v1/documents/*` routes.
 The gateway uses an explicit route allowlist, pooled upstream connections, payload limits, rate
 limiting, request correlation and consistent dependency errors.
 

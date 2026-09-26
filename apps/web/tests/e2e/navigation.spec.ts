@@ -7,7 +7,7 @@ const user = {
   email: "test@govcontrol.local",
   display_name: "Test User",
   roles: ["platform_admin"],
-  permissions: ["legal.manage", "legal.report", "contracts.manage", "contracts.report"],
+  permissions: ["legal.manage", "legal.report", "contracts.manage", "contracts.report", "documents.read"],
 };
 
 async function mockSession(page: import("@playwright/test").Page, authenticated = true) {
@@ -43,6 +43,15 @@ test("o sesiune revocată revine la ecranul de autentificare", async ({ page }) 
   await page.goto("/legal");
   await expect(page.getByRole("dialog", { name: "Conectează spațiul de lucru" })).toBeVisible();
   await expect(page.getByText("Sesiunea a expirat sau a fost revocată.", { exact: false })).toBeVisible();
+});
+
+test("un acces GovDocuments interzis este explicat în portal", async ({ page }) => {
+  await mockSession(page);
+  await page.route("**/api/v1/documents?**", (route) =>
+    route.fulfill({ status: 403, json: { detail: "Document permission is required." } }),
+  );
+  await page.goto("/legal/documents");
+  await expect(page.getByText("Document permission is required.")).toBeVisible();
 });
 
 test("GovContracts afișează dashboard-ul și registrul din serviciul separat", async ({ page }) => {

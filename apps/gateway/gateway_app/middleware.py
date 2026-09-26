@@ -35,6 +35,9 @@ class RequestGuardMiddleware(BaseHTTPMiddleware):
         self.settings = settings
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        document_mutation = request.url.path.startswith("/api/v1/documents") and (
+            request.method in {"POST", "PUT", "PATCH"}
+        )
         origin = request.headers.get("origin")
         if (
             request.method in {"POST", "PUT", "PATCH", "DELETE"}
@@ -48,7 +51,12 @@ class RequestGuardMiddleware(BaseHTTPMiddleware):
         content_length = request.headers.get("content-length")
         if content_length:
             try:
-                if int(content_length) > self.settings.max_request_body_bytes:
+                body_limit = (
+                    self.settings.max_document_upload_bytes
+                    if document_mutation
+                    else self.settings.max_request_body_bytes
+                )
+                if int(content_length) > body_limit:
                     return JSONResponse(
                         {"detail": "Request body is too large."},
                         status_code=status.HTTP_413_CONTENT_TOO_LARGE,
@@ -64,7 +72,8 @@ class RequestGuardMiddleware(BaseHTTPMiddleware):
         cookie = request.cookies.get(self.settings.session_cookie_name, "anonymous")
         subject = hashlib.sha256(f"{client}:{cookie}".encode()).hexdigest()
         window = int(time.time()) // self.settings.rate_limit_window_seconds
-        key = f"govcontrol:gateway:rate:{window}:{subject}"
+        rate_scope = "document-upload" if document_mutation else "general"
+        key = f"govcontrol:gateway:rate:{rate_scope}:{window}:{subject}"
         client_redis = request.app.state.redis
         try:
             count = await client_redis.incr(key)
@@ -75,7 +84,12 @@ class RequestGuardMiddleware(BaseHTTPMiddleware):
                 {"detail": "Gateway rate limiting is unavailable."},
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-        if count > self.settings.rate_limit_requests:
+        limit = (
+            self.settings.document_upload_rate_limit_requests
+            if document_mutation
+            else self.settings.rate_limit_requests
+        )
+        if count > limit:
             response = JSONResponse(
                 {"detail": "Rate limit exceeded."},
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,

@@ -1,4 +1,6 @@
-.PHONY: api-check api-dev api-test contracts-check contracts-dev contracts-migrate contracts-seed contracts-test contracts-worker db-migrate db-up db-down db-logs db-seed db-status gateway-check gateway-dev gateway-test platform-up stack-check stack-down stack-logs stack-status stack-up stack-up-debug web-build web-check web-dev web-test web-test-e2e web-test-e2e-live
+.PHONY: api-check api-dev api-test contracts-check contracts-dev contracts-migrate contracts-seed contracts-test contracts-worker db-migrate db-up db-down db-logs db-seed db-status documents-backfill documents-check documents-dev documents-export-legacy documents-migrate documents-test documents-worker gateway-check gateway-dev gateway-test platform-up stack-check stack-down stack-logs stack-status stack-up stack-up-debug web-build web-check web-dev web-test web-test-e2e web-test-e2e-live
+
+DOCUMENT_EXPORT_DIR ?= /tmp/govcontrol-documents-export
 
 api-dev:
 	cd apps/api && uv run uvicorn app.main:app --reload
@@ -27,6 +29,27 @@ contracts-seed:
 contracts-worker:
 	cd apps/contracts-api && uv run python -m contracts_app.worker
 
+documents-dev:
+	cd apps/documents-api && uv run uvicorn documents_app.main:app --reload --port 8020
+
+documents-test:
+	cd apps/documents-api && uv run pytest
+
+documents-check:
+	cd apps/documents-api && uv run ruff check . && uv run mypy documents_app && uv run pytest && uv run alembic check
+
+documents-migrate:
+	cd apps/documents-api && uv run alembic upgrade head
+
+documents-worker:
+	cd apps/documents-api && uv run python -m documents_app.worker
+
+documents-export-legacy:
+	cd apps/api && uv run python -m app.scripts.export_legacy_documents --output "$(DOCUMENT_EXPORT_DIR)"
+
+documents-backfill:
+	cd apps/documents-api && uv run python -m documents_app.backfill --input "$(DOCUMENT_EXPORT_DIR)"
+
 gateway-dev:
 	cd apps/gateway && uv run uvicorn gateway_app.main:app --reload --port 8080
 
@@ -52,7 +75,7 @@ web-test-e2e:
 	cd apps/web && npm run test:e2e
 
 web-test-e2e-live:
-	set -a; . ./.env; set +a; cd apps/web && npm run test:e2e -- live-contracts.spec.ts live-legal.spec.ts
+	set -a; . ./.env; set +a; cd apps/web && npm run test:e2e -- live-contracts.spec.ts live-documents.spec.ts live-legal.spec.ts --workers=1
 
 db-migrate:
 	cd apps/api && uv run alembic upgrade head
@@ -88,7 +111,7 @@ stack-status:
 	docker compose ps -a
 
 stack-logs:
-	docker compose logs -f gateway api contracts-api contracts-worker web
+	docker compose logs -f gateway api contracts-api contracts-worker documents-api documents-worker web
 
 stack-check:
 	set -a; . ./.env; set +a; curl -fsS "http://127.0.0.1:$${GATEWAY_PORT:-8080}/ready"; curl -fsS "http://127.0.0.1:$${WEB_PORT:-3000}/" >/dev/null

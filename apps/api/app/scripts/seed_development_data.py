@@ -19,6 +19,13 @@ LEGAL_REPORT_PERMISSION_KEY = "legal.report"
 AUDIT_VIEW_PERMISSION_KEY = "audit.view"
 CONTRACTS_MANAGE_PERMISSION_KEY = "contracts.manage"
 CONTRACTS_REPORT_PERMISSION_KEY = "contracts.report"
+DOCUMENT_PERMISSION_KEYS = (
+    "documents.read",
+    "documents.upload",
+    "documents.manage",
+    "documents.delete",
+    "documents.audit",
+)
 
 
 async def seed_development_data() -> None:
@@ -38,6 +45,11 @@ async def seed_development_data() -> None:
             (AUDIT_VIEW_PERMISSION_KEY, "View the tenant audit trail."),
             (CONTRACTS_MANAGE_PERMISSION_KEY, "Manage GovContracts records within the tenant."),
             (CONTRACTS_REPORT_PERMISSION_KEY, "View GovContracts analytics and reports."),
+            ("documents.read", "View tenant documents and their versions."),
+            ("documents.upload", "Upload documents and create document versions."),
+            ("documents.manage", "Manage document metadata, links and archival."),
+            ("documents.delete", "Soft-delete and restore documents."),
+            ("documents.audit", "View the tenant document audit trail."),
         ):
             permission = await session.scalar(select(Permission).where(Permission.key == key))
             if permission is None:
@@ -62,13 +74,19 @@ async def seed_development_data() -> None:
                     CONTRACTS_MANAGE_PERMISSION_KEY,
                     CONTRACTS_REPORT_PERMISSION_KEY,
                     AUDIT_VIEW_PERMISSION_KEY,
+                    *DOCUMENT_PERMISSION_KEYS,
                 ),
             ),
             (
                 "contracts_officer",
                 "Responsabil contracte",
                 "Gestionează registrul și execuția contractelor.",
-                (CONTRACTS_MANAGE_PERMISSION_KEY,),
+                (
+                    CONTRACTS_MANAGE_PERMISSION_KEY,
+                    "documents.read",
+                    "documents.upload",
+                    "documents.manage",
+                ),
             ),
             (
                 "legal_director",
@@ -78,13 +96,19 @@ async def seed_development_data() -> None:
                     LEGAL_MANAGE_PERMISSION_KEY,
                     LEGAL_REPORT_PERMISSION_KEY,
                     AUDIT_VIEW_PERMISSION_KEY,
+                    *DOCUMENT_PERMISSION_KEYS,
                 ),
             ),
             (
                 "legal_officer",
                 "Consilier juridic",
                 "Gestionează dosare, hotărâri și obligații.",
-                (LEGAL_MANAGE_PERMISSION_KEY,),
+                (
+                    LEGAL_MANAGE_PERMISSION_KEY,
+                    "documents.read",
+                    "documents.upload",
+                    "documents.manage",
+                ),
             ),
             (
                 "auditor",
@@ -94,6 +118,8 @@ async def seed_development_data() -> None:
                     LEGAL_REPORT_PERMISSION_KEY,
                     CONTRACTS_REPORT_PERMISSION_KEY,
                     AUDIT_VIEW_PERMISSION_KEY,
+                    "documents.read",
+                    "documents.audit",
                 ),
             ),
         )

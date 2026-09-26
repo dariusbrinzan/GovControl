@@ -4,12 +4,15 @@ import Link from "next/link";
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import {
-  apiDownload,
   apiGet,
-  apiUpload,
-  type DocumentRecord,
   type InstitutionDirectory,
 } from "../../lib/api";
+import {
+  documentsDownload,
+  documentsList,
+  documentsUpload,
+  type DocumentRecord,
+} from "../../lib/documents";
 import {
   contractsGet,
   contractsPatch,
@@ -59,10 +62,10 @@ export function ContractDetailView({ id }: { id: string }) {
     try {
       const [contract, contractDocuments, institutionDirectory] = await Promise.all([
         contractsGet<ContractDetail>(`/contracts/${id}/overview`, token),
-        apiGet<DocumentRecord[]>(`/documents?entity_type=Contract&entity_id=${id}`, token),
+        documentsList(token, { resource_type: "Contract", resource_id: id }),
         apiGet<InstitutionDirectory>("/platform/directory", token),
       ]);
-      setDetail(contract); setDocuments(contractDocuments); setDirectory(institutionDirectory);
+      setDetail(contract); setDocuments(contractDocuments.items); setDirectory(institutionDirectory);
     }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Fișa nu a putut fi încărcată."); }
     finally { setLoading(false); }
@@ -117,23 +120,23 @@ function DocumentSection({ contractId, documents, token, onChanged }: { contract
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
-    data.set("entity_type", "Contract"); data.set("entity_id", contractId);
+    data.set("resource_type", "Contract"); data.set("resource_id", contractId);
     data.set("category", "CONTRACT_DOCUMENT");
     setBusy(true); setError(null);
-    try { await apiUpload("/documents", token, data); form.reset(); await onChanged(); }
+    try { await documentsUpload(token, data); form.reset(); await onChanged(); }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Documentul nu a putut fi încărcat."); }
     finally { setBusy(false); }
   };
   const download = async (document: DocumentRecord) => {
     setBusy(true); setError(null);
     try {
-      const blob = await apiDownload(`/documents/${document.id}/download`, token);
+      const blob = await documentsDownload(document.id, token);
       const url = URL.createObjectURL(blob); const link = window.document.createElement("a");
       link.href = url; link.download = document.original_filename; link.click(); URL.revokeObjectURL(url);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Documentul nu a putut fi descărcat."); }
     finally { setBusy(false); }
   };
-  return <><RelatedList empty="Nu există documente asociate." items={documents.map((record) => ({ id: record.id, title: record.original_filename, detail: `${record.category.replaceAll("_", " ")} · ${Math.ceil(record.size_bytes / 1024)} KB` }))} icon={<Archive size={17} />} />{documents.length ? <div className="document-actions">{documents.map((document) => <button className="inline-action" disabled={busy} key={document.id} onClick={() => void download(document)} type="button">Descarcă {document.original_filename}</button>)}</div> : null}<form className="document-upload" onSubmit={upload}><label>Adaugă document<input name="file" required type="file" /></label><button className="button secondary" disabled={busy} type="submit">{busy ? "Se procesează…" : "Încarcă"}</button></form>{error ? <div className="inline-error" role="alert">{error}</div> : null}</>;
+  return <><RelatedList empty="Nu există documente asociate." items={documents.map((record) => ({ id: record.id, title: record.original_filename, detail: `${record.category.replaceAll("_", " ")} · ${Math.ceil(record.size_bytes / 1024)} KB` }))} icon={<Archive size={17} />} />{documents.length ? <div className="document-actions">{documents.map((document) => <span key={document.id}><button className="inline-action" disabled={busy || document.state !== "AVAILABLE"} onClick={() => void download(document)} type="button">Descarcă {document.original_filename}</button><Link className="inline-action" href={`/legal/documents/${document.id}`}>Gestionează {document.original_filename}</Link></span>)}</div> : null}<form className="document-upload" onSubmit={upload}><label>Adaugă document<input accept=".pdf,.txt,.csv,.docx,.xlsx,.png,.jpg,.jpeg" name="file" required type="file" /></label><button className="button secondary" disabled={busy} type="submit">{busy ? "Se procesează…" : "Încarcă"}</button></form>{error ? <div className="inline-error" role="alert">{error}</div> : null}</>;
 }
 
 function RelatedList({ items, empty, icon }: { items: Array<{ id: string; title: string; detail: string }>; empty: string; icon: ReactNode }) {

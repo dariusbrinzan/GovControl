@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
-  apiDownload, apiGet, apiPatch, type CourtDecision, type DocumentRecord, type EnforcementProceeding,
+  apiGet, apiPatch, type CourtDecision, type EnforcementProceeding,
   type LegalCase, type LegalObligation, type Notification, type PenaltyRule,
 } from "../../lib/api";
+import { documentsDownload, documentsList, type DocumentRecord } from "../../lib/documents";
 import { downloadCsv, dueDateHint, dueInDays, formatDate, isOverdue, obligationTypeLabels } from "../../lib/legal";
 import { Archive, Bell, BookOpenCheck, BriefcaseBusiness, CalendarClock, CircleDollarSign, FileCheck2, Files, Gavel } from "../ui/icons";
 import { EmptyState, ErrorState, LoadingState } from "../ui/data-state";
@@ -52,10 +53,13 @@ export default function OperationalPage({ view }: { view: OperationalView }) {
   const load = useCallback(async () => {
     if (!token) return;
     setLoading(true); setError(null);
-    try { setItems(await apiGet<Resource[]>(page.endpoint, token)); }
+    try {
+      if (view === "documents") setItems((await documentsList(token)).items);
+      else setItems(await apiGet<Resource[]>(page.endpoint, token));
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Datele nu au putut fi încărcate."); }
     finally { setLoading(false); }
-  }, [page.endpoint, token]);
+  }, [page.endpoint, token, view]);
   useEffect(() => { void load(); }, [load]);
 
   const filtered = useMemo(() => items.filter((item) => {
@@ -94,7 +98,7 @@ export default function OperationalPage({ view }: { view: OperationalView }) {
   const downloadDocument = async (document: DocumentRecord) => {
     setDownloading(document.id); setError(null);
     try {
-      const content = await apiDownload(`/documents/${document.id}/download`, token);
+      const content = await documentsDownload(document.id, token);
       const url = URL.createObjectURL(content); const anchor = window.document.createElement("a");
       anchor.href = url; anchor.download = document.original_filename; anchor.click(); URL.revokeObjectURL(url);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Documentul nu a putut fi descărcat."); }
@@ -128,6 +132,6 @@ function renderRow(view: OperationalView, resource: Resource, updating: string |
   if (view === "decisions") { const item = resource as CourtDecision; return <tr key={item.id}><td><strong>{item.decision_number}</strong></td><td>{item.decision_type}</td><td>{formatDate(item.decision_date)}</td><td><Link href={`/legal/cases/${item.case_id}`}>Vezi dosarul</Link></td></tr>; }
   if (view === "enforcements") { const item = resource as EnforcementProceeding; return <tr key={item.id}><td><strong>{item.file_number}</strong></td><td>{item.enforcement_officer ?? "Nerepartizat"}</td><td>{formatDate(item.start_date)}</td><td><StatusBadge status={item.status} /><select aria-label={`Actualizează statusul executării ${item.file_number}`} className="inline-status-select" disabled={updating === item.id} onChange={(event) => void changeStatus(item.id, event.target.value)} value={item.status}><option value="OPEN">OPEN</option><option value="SUSPENDED">SUSPENDED</option><option value="CLOSED">CLOSED</option></select></td></tr>; }
   if (view === "penalties") { const item = resource as PenaltyRule; return <tr key={item.id}><td><strong>{item.calculation_type === "DAILY_AMOUNT" ? "Sumă zilnică" : "Procent din bază"}</strong></td><td>{item.daily_amount ? `${item.daily_amount} RON/zi` : `${item.percentage}% din ${item.base_value} RON`}</td><td>{formatDate(item.start_date)} – {formatDate(item.end_date)}</td><td><Link href={`/legal/obligations/${item.obligation_id}`}>Vezi obligația</Link></td></tr>; }
-  if (view === "documents") { const item = resource as DocumentRecord; return <tr key={item.id}><td><button className="document-download" disabled={downloading === item.id} onClick={() => void downloadDocument(item)}><strong>{downloading === item.id ? "Se descarcă…" : item.original_filename}</strong></button><small>{Math.ceil(item.size_bytes / 1024)} KB</small></td><td>{item.category.replaceAll("_", " ")}</td><td>{item.entity_type}</td><td>{formatDate(item.created_at)}</td></tr>; }
+  if (view === "documents") { const item = resource as DocumentRecord; return <tr key={item.id}><td><Link className="primary-cell" href={`/legal/documents/${item.id}`}>{item.original_filename}</Link><button className="document-download" disabled={downloading === item.id || item.state !== "AVAILABLE"} onClick={() => void downloadDocument(item)}>{downloading === item.id ? "Se descarcă…" : "Descarcă"}</button><small>{Math.ceil(item.size_bytes / 1024)} KB · v{item.current_version_number}</small></td><td>{item.category.replaceAll("_", " ")}<small>{item.classification}</small></td><td>{item.entity_type}</td><td><StatusBadge status={item.state} /><small>{formatDate(item.created_at)}</small></td></tr>; }
   const item = resource as Notification; return <tr className={item.status === "UNREAD" ? "unread-row" : ""} key={item.id}><td><strong>{item.title}</strong><small>{item.body}</small></td><td>{formatDate(item.due_date)}</td><td><StatusBadge status={item.status} /></td><td>{item.status === "UNREAD" ? <button className="table-action" disabled={updating === item.id} onClick={() => void markRead(item.id)}>Marchează citită</button> : "—"}</td></tr>;
 }

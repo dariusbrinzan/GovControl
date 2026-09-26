@@ -7,9 +7,9 @@ while business capabilities may be deployed and scaled as independent applicatio
 Next.js portal :3000
    `-- Gateway/BFF :8080 -- server-side Redis session
           |-- Platform/GovLegal API :8000 (identity and RBAC authority)
-          `-- GovContracts API      :8010 (independent domain service)
-          |-- contracts PostgreSQL schema
-          `-- transactional outbox --> publisher worker --> Redis Stream
+          |-- GovContracts API      :8010 (independent domain service)
+          `-- GovDocuments API      :8020 (metadata, versions, links and S3)
+               `-- scan/outbox worker --> Redis Stream
 
 PostgreSQL :5432     Redis :6379     S3-compatible storage :9000
 ```
@@ -22,14 +22,14 @@ PostgreSQL :5432     Redis :6379     S3-compatible storage :9000
   remain compatible.
 - `apps/contracts-api` owns all GovContracts data and migrations. It must not import Python code
   from `apps/api` or query platform/GovLegal tables.
+- `apps/documents-api` owns document metadata, versions, resource links, lifecycle, audit, outbox
+  and object storage. It validates business resources only through authenticated internal HTTP.
 - `apps/web` is the shared portal. It communicates only with the gateway and never stores an access
   token or refresh token.
 - Redis is the local message/job infrastructure. SeaweedFS provides the local S3-compatible object
   store; the application-facing contract remains standard S3 so another provider can replace it.
-- Direct host development may select the filesystem adapter. Docker Compose selects S3 and keeps
-  document bytes outside the API container, allowing API instances to remain stateless.
-- The shared document capability validates contract ownership over the GovContracts HTTP API. It
-  does not query the `contracts` schema.
+- GovDocuments always uses S3-compatible storage and keeps bytes outside application containers.
+  Its local Compose provider is SeaweedFS; production may replace it through configuration.
 
 The services currently share one PostgreSQL server to keep local operation simple, but use
 separate schema ownership and separate Alembic version chains. A schema can later be moved to a
@@ -64,15 +64,16 @@ identifier so an operator can correlate browser, service and audit activity.
 
 ## Events and consistency
 
-Every critical GovContracts mutation writes its business state, local audit record and versioned
-outbox event in one PostgreSQL transaction. The publisher worker delivers unpublished events to
+Every critical GovContracts or GovDocuments mutation writes business state, local audit and a
+versioned outbox event in one PostgreSQL transaction. Each service's worker delivers events to
 the `govcontrol.events` Redis Stream and marks them published only after Redis accepts them. This
 provides at-least-once delivery; consumers must use the event UUID for idempotency. Cross-service
 workflows use events and compensating actions rather than distributed database transactions.
 
 ## Gateway routing and trust
 
-Public routes are namespaced as `/api/v1/platform/*` and `/api/v1/govcontracts/*`. A static map
+Public routes are namespaced as `/api/v1/platform/*`, `/api/v1/govcontracts/*` and the explicit
+`/api/v1/documents/*` capability. A static map
 restricts both first path segment and HTTP methods. The gateway never accepts an upstream URL,
 removes hop-by-hop and browser identity headers, applies request-size/rate controls and forwards a
 small header allowlist. Its pooled HTTP client propagates only a fresh identity assertion and UUID
@@ -81,9 +82,10 @@ override is maintained separately.
 
 ## Target application map
 
-The current extraction contains Gateway/BFF, Platform/GovLegal, GovContracts and the outbox worker.
+The current extraction contains Gateway/BFF, Platform/GovLegal, GovContracts, GovDocuments and
+their workers.
 Future bounded applications remain explicit architecture targets rather than empty services:
-documents, notifications, reporting/search and additional Gov modules. Identity remains a
+notifications, reporting/search and additional Gov modules. Identity remains a
 Platform-owned boundary while the gateway owns protocols and sessions.
 
 ## Kubernetes readiness without Kubernetes manifests

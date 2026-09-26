@@ -8,8 +8,8 @@ is the supported deployment simulation until an actual Kubernetes environment is
 1. Copy `.env.example` to `.env`.
 2. Replace every `replace-with-*` value with a distinct local secret. Never commit `.env`.
 3. Start the complete stack with `make stack-up`.
-4. The one-shot `api-migrate` and `contracts-migrate` containers apply their independent Alembic
-   histories before the APIs and worker start.
+4. The one-shot `api-migrate`, `contracts-migrate` and `documents-migrate` containers apply their
+   independent Alembic histories before APIs and workers start.
 5. Seed the platform with `make db-seed`, then seed contracts with `make contracts-seed`.
 6. Verify dependencies and processes with `make stack-check` and `make stack-status`.
 
@@ -20,7 +20,8 @@ Default addresses are:
 - object storage S3 endpoint: `http://127.0.0.1:9000`.
 
 Platform and GovContracts are intentionally reachable only inside the Compose network. Run
-`make stack-up-debug` when localhost access to ports `8000` and `8010` is needed for debugging.
+`make stack-up-debug` when localhost access to ports `8000`, `8010` and `8020` is needed for
+debugging.
 Override `WEB_PORT` and `GATEWAY_PORT` when occupied. When either changes, also set
 `NEXT_PUBLIC_GATEWAY_URL`, `PUBLIC_BASE_URL`, `PORTAL_ORIGINS` and `PORTAL_AFTER_LOGIN_URL` before
 rebuilding the portal image.
@@ -33,8 +34,14 @@ rebuilding the portal image.
 - `make platform-up` starts only PostgreSQL, Redis and object storage for host-based development.
 - `make db-down` stops PostgreSQL only.
 
-Gateway `/health` proves that the process is alive. `/ready` verifies Redis, Platform and
-GovContracts. Compose waits for readiness and successful migrations before starting dependents.
+Gateway `/health` proves that the process is alive. `/ready` verifies Redis, Platform,
+GovContracts and GovDocuments. GovDocuments `/ready` separately verifies PostgreSQL, S3, Redis,
+Platform and GovContracts. Compose waits for readiness and successful migrations before starting
+dependents.
+
+Useful independent commands are `make documents-check`, `make documents-migrate` and
+`make documents-worker`. Operational contracts, retention, recovery and backfill/rollback are in
+[`govdocuments.md`](govdocuments.md).
 
 ## Authentication and secrets
 

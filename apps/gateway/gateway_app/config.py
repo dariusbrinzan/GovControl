@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://127.0.0.1:6379/1"
     platform_api_url: str = "http://127.0.0.1:8000/api/v1"
     contracts_api_url: str = "http://127.0.0.1:8010/api/v1"
+    documents_api_url: str = "http://127.0.0.1:8020/api/v1"
     internal_service_token: SecretStr | None = SecretStr(
         "govcontrol-local-internal-token-change-me"
     )
@@ -44,8 +45,11 @@ class Settings(BaseSettings):
     request_timeout_seconds: float = 10.0
     connect_timeout_seconds: float = 2.0
     max_request_body_bytes: int = 12 * 1024 * 1024
+    max_document_upload_bytes: int = 26 * 1024 * 1024
+    document_request_timeout_seconds: float = 60.0
     rate_limit_requests: int = 240
     rate_limit_window_seconds: int = 60
+    document_upload_rate_limit_requests: int = 30
 
     oidc_issuer: str | None = None
     oidc_client_id: str | None = None
@@ -82,8 +86,14 @@ class Settings(BaseSettings):
             raise ValueError("SESSION_ROTATION_SECONDS must fit inside the session lifetime")
         if self.max_request_body_bytes < 1024:
             raise ValueError("MAX_REQUEST_BODY_BYTES must be at least 1024")
+        if self.max_document_upload_bytes < self.max_request_body_bytes:
+            raise ValueError("MAX_DOCUMENT_UPLOAD_BYTES must cover the general body limit")
+        if self.document_request_timeout_seconds <= 0:
+            raise ValueError("DOCUMENT_REQUEST_TIMEOUT_SECONDS must be positive")
         if self.rate_limit_requests < 1 or self.rate_limit_window_seconds < 1:
             raise ValueError("rate limiting values must be positive")
+        if self.document_upload_rate_limit_requests < 1:
+            raise ValueError("DOCUMENT_UPLOAD_RATE_LIMIT_REQUESTS must be positive")
         if self.cookie_samesite == "none" and not self.cookie_secure:
             raise ValueError("COOKIE_SAMESITE=none requires COOKIE_SECURE")
         if not 15 <= self.gateway_assertion_ttl_seconds <= 300:

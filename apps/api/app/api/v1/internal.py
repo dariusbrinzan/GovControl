@@ -1,6 +1,7 @@
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
 
 from app.api.v1.auth import CurrentUserResponse
@@ -11,10 +12,12 @@ from app.core.security import (
     SettingsDependency,
     build_user_context,
 )
+from app.repositories.legal import LegalRepository
 from app.services.identity import FederatedIdentityUnavailableError, IdentityService
 from app.services.platform import PlatformService
 
 router = APIRouter(prefix="/internal", include_in_schema=False)
+TenantHeader = Annotated[uuid.UUID, Header(alias="X-Tenant-ID")]
 
 
 class FederatedIdentityRequest(BaseModel):
@@ -92,3 +95,27 @@ async def validate_directory_assignments(
             status.HTTP_404_NOT_FOUND,
             "Department or user is unavailable in this tenant.",
         )
+
+
+@router.get("/resources/{resource_type}/{resource_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def validate_legal_resource(
+    resource_type: str,
+    resource_id: uuid.UUID,
+    tenant_id: TenantHeader,
+    _: InternalServiceDependency,
+    current_user: CurrentUserDependency,
+    session: SessionDependency,
+) -> None:
+    """Validate a GovLegal resource without exposing its data to another service."""
+    if tenant_id != current_user.tenant_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Resource not found in this tenant.")
+    repository = LegalRepository(session)
+    resolvers = {
+        "LegalCase": repository.case,
+        "LegalObligation": repository.obligation,
+        "CourtDecision": repository.decision,
+        "EnforcementProceeding": repository.enforcement,
+    }
+    resolver = resolvers.get(resource_type)
+    if resolver is None or await resolver(resource_id, current_user.tenant_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Resource not found in this tenant.")

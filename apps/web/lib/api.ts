@@ -57,17 +57,6 @@ export type PenaltyRule = {
 
 export type PenaltyExposure = { rule_id: string; as_of_date: string; amount: string };
 
-export type DocumentRecord = {
-  id: string;
-  entity_type: string;
-  entity_id: string;
-  category: string;
-  original_filename: string;
-  content_type: string;
-  size_bytes: number;
-  created_at: string;
-};
-
 export type AuditEvent = {
   id: string;
   action: string;
@@ -264,25 +253,6 @@ export async function apiPost<T>(path: string, csrfToken: string, body: unknown)
   });
   if (!response.ok) throw await responseError(response);
   return response.json() as Promise<T>;
-}
-
-export async function apiUpload<T>(path: string, csrfToken: string, body: FormData): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    method: "POST",
-    credentials: "include",
-    headers: { "X-CSRF-Token": csrfToken },
-    body,
-  });
-  if (!response.ok) throw await responseError(response);
-  return response.json() as Promise<T>;
-}
-
-export async function apiDownload(path: string, _csrfToken: string): Promise<Blob> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    credentials: "include",
-  });
-  if (!response.ok) throw await responseError(response);
-  return response.blob();
 }
 
 export function buildQuery(values: Record<string, string | null | undefined>): string {
