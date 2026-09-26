@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, status
 from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import select
 
 from app.api.v1.auth import CurrentUserResponse
 from app.core.security import (
@@ -13,6 +14,7 @@ from app.core.security import (
     build_user_context,
 )
 from app.repositories.legal import LegalRepository
+from app.models.user import User
 from app.services.identity import FederatedIdentityUnavailableError, IdentityService
 from app.services.platform import PlatformService
 
@@ -28,6 +30,12 @@ class FederatedIdentityRequest(BaseModel):
     display_name: str | None = Field(None, max_length=255)
 
 
+class NotificationRecipientResponse(BaseModel):
+    user_id: uuid.UUID
+    tenant_id: uuid.UUID
+    email: EmailStr
+
+
 @router.get("/auth/context", response_model=CurrentUserResponse)
 async def internal_auth_context(
     _: InternalServiceDependency, current_user: CurrentUserDependency
@@ -41,6 +49,30 @@ async def internal_auth_context(
         display_name=current_user.display_name,
         roles=sorted(current_user.roles),
         permissions=sorted(current_user.permissions),
+    )
+
+
+@router.get(
+    "/notifications/recipients/{tenant_id}/{user_id}",
+    response_model=NotificationRecipientResponse,
+)
+async def notification_recipient(
+    tenant_id: uuid.UUID,
+    user_id: uuid.UUID,
+    _: InternalServiceDependency,
+    session: SessionDependency,
+) -> NotificationRecipientResponse:
+    user = await session.scalar(
+        select(User).where(
+            User.id == user_id,
+            User.tenant_id == tenant_id,
+            User.is_active.is_(True),
+        )
+    )
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Recipient is unavailable.")
+    return NotificationRecipientResponse(
+        user_id=user.id, tenant_id=user.tenant_id, email=user.email
     )
 
 

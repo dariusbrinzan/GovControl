@@ -21,12 +21,14 @@ from app.schemas.legal import (
     PenaltyRuleCreate,
     PenaltyRuleResponse,
 )
+from app.schemas.notification import NotificationDispatchResponse
 from app.services.legal import (
     InvalidStatusTransitionError,
     LegalConflictError,
     LegalResourceNotFoundError,
     LegalService,
 )
+from app.services.notifications import NotificationService
 
 router = APIRouter(prefix="/legal")
 LegalManager = Annotated[AuthenticatedUser, Depends(require_permission("legal.manage"))]
@@ -203,6 +205,16 @@ async def overdue_obligations(
 ) -> list[LegalObligationResponse]:
     items = await LegalService(session).overdue_obligations(user.tenant_id, date.today())
     return [LegalObligationResponse.model_validate(item) for item in items]
+
+
+@router.post("/reminders/deadlines/dispatch", response_model=NotificationDispatchResponse)
+async def dispatch_deadline_reminders(
+    user: LegalManager, session: SessionDependency, as_of_date: date | None = None
+) -> NotificationDispatchResponse:
+    created = await NotificationService(session).dispatch_deadline_reminders(
+        user.tenant_id, user.id, as_of_date or date.today()
+    )
+    return NotificationDispatchResponse(created=created)
 
 
 @router.get("/obligations/{obligation_id}", response_model=LegalObligationResponse)

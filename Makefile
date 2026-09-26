@@ -1,4 +1,4 @@
-.PHONY: api-check api-dev api-test contracts-check contracts-dev contracts-migrate contracts-seed contracts-test contracts-worker db-migrate db-up db-down db-logs db-seed db-status documents-backfill documents-check documents-dev documents-export-legacy documents-migrate documents-test documents-worker gateway-check gateway-dev gateway-test platform-up stack-check stack-down stack-logs stack-status stack-up stack-up-debug web-build web-check web-dev web-test web-test-e2e web-test-e2e-live
+.PHONY: api-check api-dev api-test contracts-check contracts-dev contracts-migrate contracts-seed contracts-test contracts-worker db-migrate db-up db-down db-logs db-seed db-status documents-backfill documents-check documents-clean-e2e documents-dev documents-export-legacy documents-migrate documents-test documents-worker gateway-check gateway-dev gateway-test platform-up stack-check stack-down stack-logs stack-status stack-up stack-up-debug web-build web-check web-dev web-test web-test-e2e web-test-e2e-live
 
 DOCUMENT_EXPORT_DIR ?= /tmp/govcontrol-documents-export
 
@@ -50,6 +50,9 @@ documents-export-legacy:
 documents-backfill:
 	cd apps/documents-api && uv run python -m documents_app.backfill --input "$(DOCUMENT_EXPORT_DIR)"
 
+documents-clean-e2e:
+	cd apps/documents-api && uv run python -m documents_app.cleanup_e2e
+
 gateway-dev:
 	cd apps/gateway && uv run uvicorn gateway_app.main:app --reload --port 8080
 
@@ -75,7 +78,7 @@ web-test-e2e:
 	cd apps/web && npm run test:e2e
 
 web-test-e2e-live:
-	set -a; . ./.env; set +a; cd apps/web && npm run test:e2e -- live-contracts.spec.ts live-documents.spec.ts live-legal.spec.ts --workers=1
+	set -a; . ./.env; set +a; trap 'cd "$(CURDIR)/apps/documents-api" && uv run python -m documents_app.cleanup_e2e' EXIT; cd apps/documents-api && uv run python -m documents_app.cleanup_e2e; cd ../web && npm run test:e2e -- live-contracts.spec.ts live-documents.spec.ts live-legal.spec.ts --workers=1
 
 db-migrate:
 	cd apps/api && uv run alembic upgrade head

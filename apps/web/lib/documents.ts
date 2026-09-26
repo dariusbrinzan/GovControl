@@ -67,14 +67,21 @@ const gatewayBaseUrl =
   process.env.NEXT_PUBLIC_GATEWAY_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8080";
 const documentsApiBase = `${gatewayBaseUrl}/api/v1/documents`;
 
-async function documentError(response: Response): Promise<Error> {
+export class DocumentApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "DocumentApiError";
+  }
+}
+
+async function documentError(response: Response): Promise<DocumentApiError> {
   if (response.status === 401 && typeof window !== "undefined") {
     window.dispatchEvent(new Event("govcontrol:session-expired"));
   }
   const payload = await response.json().catch(() => null);
   const detail = typeof payload?.detail === "string" ? payload.detail : null;
-  if (response.status === 403) return new Error(detail ?? "Nu ai permisiunea necesară pentru documente.");
-  return new Error(detail ?? `Cererea GovDocuments a eșuat (${response.status}).`);
+  if (response.status === 403) return new DocumentApiError(detail ?? "Nu ai permisiunea necesară pentru documente.", response.status);
+  return new DocumentApiError(detail ?? `Cererea GovDocuments a eșuat (${response.status}).`, response.status);
 }
 
 async function request<T>(path: string, csrfToken: string, init?: RequestInit): Promise<T> {
@@ -123,8 +130,13 @@ export async function documentsList(
   return { ...response, items: response.items.map(flatten) };
 }
 
-export async function documentsGet(documentId: string, csrfToken: string): Promise<DocumentRecord> {
-  return flatten(await request<DocumentApiRecord>(`/${documentId}`, csrfToken));
+export async function documentsGet(
+  documentId: string,
+  csrfToken: string,
+  includeDeleted = false,
+): Promise<DocumentRecord> {
+  const suffix = includeDeleted ? "?include_deleted=true" : "";
+  return flatten(await request<DocumentApiRecord>(`/${documentId}${suffix}`, csrfToken));
 }
 
 export async function documentsVersions(

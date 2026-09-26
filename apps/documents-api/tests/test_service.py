@@ -1,13 +1,17 @@
 import uuid
 from datetime import UTC, datetime
+from io import BytesIO
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi import UploadFile
+from starlette.datastructures import Headers
 
 from documents_app.config import Settings
-from documents_app.models import Document, DocumentState, DocumentVersion
+from documents_app.models import Document, DocumentState, DocumentVersion, ResourceType
+from documents_app.observability import request_id_context
 from documents_app.service import (
     DocumentConflictError,
     DocumentService,
@@ -39,12 +43,68 @@ def test_outbox_envelope_contains_idempotency_and_tenant_without_content() -> No
     assert "content" not in envelope["payload"]
 
 
+def test_audit_event_keeps_request_id_for_correlation() -> None:
+    request_id = uuid.uuid4()
+    document = SimpleNamespace(id=uuid.uuid4(), tenant_id=uuid.uuid4())
+    session = MagicMock()
+    documents = service_with_session(session)
+    token = request_id_context.set(request_id)
+    try:
+        documents._audit(document, uuid.uuid4(), "document.downloaded", None)  # type: ignore[arg-type]
+    finally:
+        request_id_context.reset(token)
+    event = session.add.call_args.args[0]
+    assert event.request_id == request_id
+
+
 def service_with_session(session: Any) -> DocumentService:
     return DocumentService(
         session,
         SimpleNamespace(),  # type: ignore[arg-type]
         Settings(database_url="postgresql+asyncpg://user:password@localhost/test"),
     )
+
+
+def text_upload(content: bytes) -> UploadFile:
+    return UploadFile(
+        BytesIO(content),
+        filename="idempotent.txt",
+        headers=Headers({"content-type": "text/plain"}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_repeated_idempotency_key_returns_original_document_without_upload() -> None:
+    tenant_id, document_id, resource_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    content = b"same request content"
+    import hashlib
+
+    checksum = hashlib.sha256(content).hexdigest()
+    request_hash = hashlib.sha256(
+        f"{ResourceType.LEGAL_CASE}:{resource_id}:E2E:INTERNAL:None:{checksum}".encode()
+    ).hexdigest()
+    session = MagicMock()
+    session.scalar = AsyncMock(
+        return_value=SimpleNamespace(request_hash=request_hash, document_id=document_id)
+    )
+    documents = service_with_session(session)
+    expected = SimpleNamespace(id=document_id)
+    documents.get = AsyncMock(return_value=expected)  # type: ignore[method-assign]
+
+    result = await documents.create(
+        tenant_id=tenant_id,
+        actor_id=uuid.uuid4(),
+        resource_type=ResourceType.LEGAL_CASE,
+        resource_id=resource_id,
+        category="E2E",
+        classification="INTERNAL",
+        retention_until=None,
+        upload=text_upload(content),
+        idempotency_key="stable-key",
+    )
+
+    assert result is expected
+    documents.get.assert_awaited_once_with(tenant_id, document_id, include_deleted=True)  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@ from app.models.legal import (
     PenaltyRule,
 )
 from app.models.notification import Notification
+from app.models.outbox import IntegrationOutboxEvent
 from app.models.rbac import Permission, Role, RolePermission, UserRole
 from app.models.tenant import Tenant
 from app.models.user import User
@@ -25,6 +26,7 @@ __all__ = [
     "LegalCase",
     "LegalObligation",
     "Notification",
+    "IntegrationOutboxEvent",
     "ObligationStatusHistory",
     "PenaltyRule",
     "Permission",

@@ -1,5 +1,5 @@
-import { ContractsNotifications } from "../../../components/contracts/contracts-notifications";
+import { NotificationCenter } from "../../../components/notifications/notification-center";
 
 export default function ContractsNotificationsPage() {
-  return <ContractsNotifications />;
+  return <NotificationCenter module="contracts" />;
 }

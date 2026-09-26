@@ -149,7 +149,11 @@ async def backfill(source: Path) -> dict[str, int]:
                             event_type="document.available.v1",
                             aggregate_type="Document",
                             aggregate_id=document_id,
-                            payload={"version_id": str(version_id), "source": "legacy-backfill"},
+                            payload={
+                                "version_id": str(version_id),
+                                "recipient_user_id": str(actor_id),
+                                "source": "legacy-backfill",
+                            },
                             created_at=created_at,
                         ),
                     ]

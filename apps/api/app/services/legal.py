@@ -16,6 +16,7 @@ from app.models.legal import (
     ObligationStatusHistory,
     PenaltyRule,
 )
+from app.models.outbox import IntegrationOutboxEvent
 from app.repositories.department import DepartmentRepository
 from app.repositories.legal import LegalRepository
 from app.repositories.user import UserRepository
@@ -151,6 +152,13 @@ class LegalService:
             entity_type="EnforcementProceeding",
             entity_id=item.id,
             new_value={"old_status": old_status.value, "new_status": new_status.value},
+        )
+        self._event(
+            tenant_id,
+            actor_id,
+            "legal.enforcement.updated.v1",
+            "EnforcementProceeding",
+            item.id,
         )
         await self.session.commit()
         await self.session.refresh(item)
@@ -330,9 +338,33 @@ class LegalService:
                 entity_id=item.id,
                 new_value=value,
             )
+            event_type = {
+                "EnforcementProceeding": "legal.enforcement.updated.v1",
+                "PenaltyRule": "legal.penalty.exposure.v1",
+            }.get(entity_type)
+            if event_type is not None:
+                self._event(tenant_id, actor_id, event_type, entity_type, item.id)
             await self.session.commit()
         except IntegrityError as exc:
             await self.session.rollback()
             raise LegalConflictError from exc
         await self.session.refresh(item)
         return item
+
+    def _event(
+        self,
+        tenant_id: uuid.UUID,
+        actor_id: uuid.UUID,
+        event_type: str,
+        aggregate_type: str,
+        aggregate_id: uuid.UUID,
+    ) -> None:
+        self.session.add(
+            IntegrationOutboxEvent(
+                tenant_id=tenant_id,
+                event_type=event_type,
+                aggregate_type=aggregate_type,
+                aggregate_id=aggregate_id,
+                payload={"recipient_user_id": str(actor_id)},
+            )
+        )

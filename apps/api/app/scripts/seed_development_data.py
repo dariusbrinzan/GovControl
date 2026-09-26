@@ -26,6 +26,13 @@ DOCUMENT_PERMISSION_KEYS = (
     "documents.delete",
     "documents.audit",
 )
+NOTIFICATION_PERMISSION_KEYS = (
+    "notifications.read",
+    "notifications.manage",
+    "notifications.preferences",
+    "notifications.admin",
+    "notifications.audit",
+)
 
 
 async def seed_development_data() -> None:
@@ -50,6 +57,14 @@ async def seed_development_data() -> None:
             ("documents.manage", "Manage document metadata, links and archival."),
             ("documents.delete", "Soft-delete and restore documents."),
             ("documents.audit", "View the tenant document audit trail."),
+            ("notifications.read", "View the current user's tenant notifications."),
+            ("notifications.manage", "Update the current user's notification state."),
+            (
+                "notifications.preferences",
+                "Manage the current user's notification preferences.",
+            ),
+            ("notifications.admin", "Manage tenant notification templates and deliveries."),
+            ("notifications.audit", "View tenant notification audit events."),
         ):
             permission = await session.scalar(select(Permission).where(Permission.key == key))
             if permission is None:
@@ -75,6 +90,7 @@ async def seed_development_data() -> None:
                     CONTRACTS_REPORT_PERMISSION_KEY,
                     AUDIT_VIEW_PERMISSION_KEY,
                     *DOCUMENT_PERMISSION_KEYS,
+                    *NOTIFICATION_PERMISSION_KEYS,
                 ),
             ),
             (
@@ -86,6 +102,9 @@ async def seed_development_data() -> None:
                     "documents.read",
                     "documents.upload",
                     "documents.manage",
+                    "notifications.read",
+                    "notifications.manage",
+                    "notifications.preferences",
                 ),
             ),
             (
@@ -97,6 +116,7 @@ async def seed_development_data() -> None:
                     LEGAL_REPORT_PERMISSION_KEY,
                     AUDIT_VIEW_PERMISSION_KEY,
                     *DOCUMENT_PERMISSION_KEYS,
+                    *NOTIFICATION_PERMISSION_KEYS,
                 ),
             ),
             (
@@ -108,6 +128,9 @@ async def seed_development_data() -> None:
                     "documents.read",
                     "documents.upload",
                     "documents.manage",
+                    "notifications.read",
+                    "notifications.manage",
+                    "notifications.preferences",
                 ),
             ),
             (
@@ -120,6 +143,8 @@ async def seed_development_data() -> None:
                     AUDIT_VIEW_PERMISSION_KEY,
                     "documents.read",
                     "documents.audit",
+                    "notifications.read",
+                    "notifications.audit",
                 ),
             ),
         )

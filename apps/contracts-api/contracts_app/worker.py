@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import signal
+import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -14,8 +15,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from contracts_app.config import get_settings
 from contracts_app.database import session_factory
 from contracts_app.models import (
+    Contract,
     ContractMilestone,
-    ContractNotification,
     ContractObligation,
     ContractPayment,
     MilestoneStatus,
@@ -25,6 +26,7 @@ from contracts_app.models import (
 )
 
 logger = logging.getLogger("govcontracts.worker")
+REMINDER_NAMESPACE = uuid.UUID("83a5fa53-871f-4a89-bfc6-97737c667f85")
 
 
 def log_event(event: str, **details: Any) -> None:
@@ -71,9 +73,12 @@ async def create_due_reminders(today: date, horizon_days: int = 14) -> int:
                 select(
                     ContractMilestone.tenant_id,
                     ContractMilestone.id,
-                    ContractMilestone.title,
                     ContractMilestone.due_date,
-                ).where(
+                    Contract.responsible_user_id,
+                    Contract.created_by,
+                )
+                .join(Contract, Contract.id == ContractMilestone.contract_id)
+                .where(
                     ContractMilestone.due_date.between(today, horizon),
                     ContractMilestone.status.not_in(
                         [MilestoneStatus.COMPLETED, MilestoneStatus.CANCELLED]
@@ -86,9 +91,13 @@ async def create_due_reminders(today: date, horizon_days: int = 14) -> int:
                 select(
                     ContractObligation.tenant_id,
                     ContractObligation.id,
-                    ContractObligation.description,
                     ContractObligation.due_date,
-                ).where(
+                    ContractObligation.responsible_user_id,
+                    Contract.responsible_user_id,
+                    Contract.created_by,
+                )
+                .join(Contract, Contract.id == ContractObligation.contract_id)
+                .where(
                     ContractObligation.due_date.between(today, horizon),
                     ContractObligation.status.not_in(
                         [ObligationStatus.COMPLETED, ObligationStatus.CANCELLED]
@@ -101,9 +110,12 @@ async def create_due_reminders(today: date, horizon_days: int = 14) -> int:
                 select(
                     ContractPayment.tenant_id,
                     ContractPayment.id,
-                    ContractPayment.reference,
                     ContractPayment.due_date,
-                ).where(
+                    Contract.responsible_user_id,
+                    Contract.created_by,
+                )
+                .join(Contract, Contract.id == ContractPayment.contract_id)
+                .where(
                     ContractPayment.due_date.between(today, horizon),
                     ContractPayment.status.not_in(
                         [PaymentStatus.PAID, PaymentStatus.REJECTED, PaymentStatus.CANCELLED]
@@ -112,53 +124,82 @@ async def create_due_reminders(today: date, horizon_days: int = 14) -> int:
             )
         ).all()
         values: list[dict[str, Any]] = []
-        for tenant_id, entity_id, title, due_date in milestone_rows:
+        for tenant_id, entity_id, due_date, responsible_user_id, created_by in milestone_rows:
+            recipient_id = responsible_user_id or created_by
+            event_id = uuid.uuid5(
+                REMINDER_NAMESPACE, f"milestone:{entity_id}:{due_date.isoformat()}"
+            )
             values.append(
                 {
+                    "id": event_id,
                     "tenant_id": tenant_id,
-                    "entity_type": "ContractMilestone",
-                    "entity_id": entity_id,
-                    "notification_type": "DUE_SOON",
-                    "title": "Jalon contractual apropiat",
-                    "body": f"{title} are termen la {due_date.isoformat()}.",
-                    "due_date": due_date,
+                    "event_type": "contracts.reminder.milestone-due.v1",
+                    "aggregate_type": "ContractMilestone",
+                    "aggregate_id": entity_id,
+                    "payload": {
+                        "milestone_id": str(entity_id),
+                        "recipient_user_id": str(recipient_id),
+                        "due_date": due_date.isoformat(),
+                    },
                 }
             )
-        for tenant_id, entity_id, description, obligation_due_date in obligation_rows:
+        for (
+            tenant_id,
+            entity_id,
+            obligation_due_date,
+            obligation_user_id,
+            contract_user_id,
+            created_by,
+        ) in obligation_rows:
             if obligation_due_date is None:
                 continue
+            recipient_id = obligation_user_id or contract_user_id or created_by
+            event_id = uuid.uuid5(
+                REMINDER_NAMESPACE,
+                f"obligation:{entity_id}:{obligation_due_date.isoformat()}",
+            )
             values.append(
                 {
+                    "id": event_id,
                     "tenant_id": tenant_id,
-                    "entity_type": "ContractObligation",
-                    "entity_id": entity_id,
-                    "notification_type": "DUE_SOON",
-                    "title": "Obligație contractuală apropiată",
-                    "body": f"{description} are termen la {obligation_due_date.isoformat()}.",
-                    "due_date": obligation_due_date,
+                    "event_type": "contracts.reminder.obligation-due.v1",
+                    "aggregate_type": "ContractObligation",
+                    "aggregate_id": entity_id,
+                    "payload": {
+                        "obligation_id": str(entity_id),
+                        "recipient_user_id": str(recipient_id),
+                        "due_date": obligation_due_date.isoformat(),
+                    },
                 }
             )
-        for tenant_id, entity_id, reference, payment_due_date in payment_rows:
-            payment_label = reference or "Plata planificată"
+        for tenant_id, entity_id, payment_due_date, responsible_user_id, created_by in payment_rows:
+            recipient_id = responsible_user_id or created_by
+            event_id = uuid.uuid5(
+                REMINDER_NAMESPACE, f"payment:{entity_id}:{payment_due_date.isoformat()}"
+            )
             values.append(
                 {
+                    "id": event_id,
                     "tenant_id": tenant_id,
-                    "entity_type": "ContractPayment",
-                    "entity_id": entity_id,
-                    "notification_type": "DUE_SOON",
-                    "title": "Plată contractuală apropiată",
-                    "body": f"{payment_label} are scadența la {payment_due_date.isoformat()}.",
-                    "due_date": payment_due_date,
+                    "event_type": "contracts.reminder.payment-due.v1",
+                    "aggregate_type": "ContractPayment",
+                    "aggregate_id": entity_id,
+                    "payload": {
+                        "payment_id": str(entity_id),
+                        "recipient_user_id": str(recipient_id),
+                        "due_date": payment_due_date.isoformat(),
+                    },
                 }
             )
         if not values:
             return 0
-        await session.execute(
-            insert(ContractNotification)
+        inserted = await session.scalars(
+            insert(OutboxEvent)
             .values(values)
-            .on_conflict_do_nothing(constraint="uq_contract_notifications_business_key")
+            .on_conflict_do_nothing(index_elements=["id"])
+            .returning(OutboxEvent.id)
         )
-        return len(values)
+        return len(inserted.all())
 
 
 async def run_worker() -> None:

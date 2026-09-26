@@ -7,6 +7,8 @@ export default defineConfig({
   fullyParallel: true,
   retries: 0,
   reporter: "line",
+  expect: { timeout: 15_000 },
+  timeout: 60_000,
   use: { baseURL: externalBaseUrl ?? "http://localhost:3000", trace: "retain-on-failure" },
   webServer: externalBaseUrl ? undefined : {
     command: "npm run dev -- --hostname 127.0.0.1 --port 3000",

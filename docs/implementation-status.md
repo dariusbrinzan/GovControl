@@ -64,11 +64,12 @@ backfill migrated all 6 source rows and links; its second run skipped and reveri
 ## Verification evidence
 
 - GitHub Actions independently enforces lint, strict type checking and tests for Platform,
-  GovContracts, gateway and the portal, followed by the portal production build.
+  GovContracts, GovDocuments, gateway and the portal. GovDocuments also runs Alembic upgrade/check
+  against PostgreSQL and an isolated Docker build; the portal runs its production build and mock E2E.
 - Platform: Ruff, strict mypy and 29 pytest tests.
 - Gateway: Ruff, strict mypy and 13 pytest security/integration tests.
 - GovContracts: Ruff, strict mypy and 9 pytest tests.
-- GovDocuments: Ruff, strict mypy and 26 pytest tests, including upload limits, spooling,
+- GovDocuments: Ruff, strict mypy and 30 pytest tests, including upload limits, spooling,
   unavailable states, S3 failures, RBAC, tenant/resource isolation and outbox shape.
 - Portal: ESLint, strict TypeScript, 4 Vitest tests and optimized Next.js build with the document
   details/version/audit route.
@@ -80,7 +81,8 @@ backfill migrated all 6 source rows and links; its second run skipped and reveri
   a restored contract mutation, workflow controls, audit, session logout and a revoked-session
   recovery against the containerized stack.
 - Three real GovDocuments Playwright flows cover legal and contract upload, exact downloaded
-  content, versions, audit, CSRF rejection, browser tenant-header stripping, soft delete and restore.
+  content, versions, audit, CSRF rejection, browser tenant-header stripping, soft delete and restore
+  after reload. Development-only cleanup removes their DB, S3 and Redis Stream artifacts.
 - A local concurrency smoke run completed 100 Redis-session requests and 40 authenticated
   Platform proxy requests without errors; the gateway reuses one pooled HTTP client.
 - Container smoke tests cover readiness, authenticated internal calls, tenant-reference rejection,
@@ -88,6 +90,8 @@ backfill migrated all 6 source rows and links; its second run skipped and reveri
 - Four concurrent 24 MiB uploads through the real Gateway completed successfully in 3.75 seconds
   local wall time; observed RSS was about 58 MiB Gateway and 133 MiB GovDocuments. This is a smoke
   observation, not a production benchmark.
+- Final backfill reconciliation reports 6 legacy rows, 6 GovDocuments rows, 6 versions, 6 links,
+  6 S3 objects and zero unpublished document outbox events; all test artifacts were removed.
 
 ## Intentional future work
 

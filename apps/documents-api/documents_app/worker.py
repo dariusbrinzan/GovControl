@@ -100,7 +100,10 @@ async def scan_batch(storage: S3Storage, batch_size: int = 10) -> int:
                     event_type=event_type,
                     aggregate_type="Document",
                     aggregate_id=document.id,
-                    payload={"version_id": str(current.id)},
+                    payload={
+                        "version_id": str(current.id),
+                        "recipient_user_id": str(current.created_by_user_id),
+                    },
                 )
             )
     return len(versions)

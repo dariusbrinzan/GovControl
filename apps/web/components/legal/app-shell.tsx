@@ -12,6 +12,7 @@ import {
   X,
 } from "../ui/icons";
 import { useSession } from "./session-provider";
+import { NotificationBell } from "../notifications/notification-bell";
 
 type NavigationGroup = {
   label: string;
@@ -47,7 +48,7 @@ const legalGroups: NavigationGroup[] = [
     label: "Evidență și control",
     items: [
       { href: "/legal/documents", label: "Documente", icon: Files, permission: "legal.manage" },
-      { href: "/legal/notifications", label: "Notificări", icon: Bell, permission: "legal.manage" },
+      { href: "/legal/notifications", label: "Notificări", icon: Bell, permission: "notifications.read" },
       { href: "/legal/audit", label: "Jurnal de audit", icon: ShieldCheck, permission: "audit.view" },
       { href: "/legal/reports", label: "Rapoarte", icon: FileCheck2, permission: "legal.report" },
     ],
@@ -60,7 +61,7 @@ const contractGroups: NavigationGroup[] = [
     items: [
       { href: "/contracts", label: "Panou de control", icon: LayoutDashboard, exact: true, permission: "contracts.report" },
       { href: "/contracts/registry", label: "Registru contracte", icon: BriefcaseBusiness, permission: "contracts.manage" },
-      { href: "/contracts/notifications", label: "Notificări", icon: Bell, permission: "contracts.report" },
+      { href: "/contracts/notifications", label: "Notificări", icon: Bell, permission: "notifications.read" },
       { href: "/contracts/audit", label: "Jurnal de audit", icon: ShieldCheck, permission: "audit.view" },
     ],
   },
@@ -152,7 +153,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <nav className="breadcrumbs" aria-label="Breadcrumb"><Link href={moduleRoot}>{moduleName}</Link><span>/</span><strong>{currentName}</strong></nav>
           <form className="global-search" onSubmit={submitSearch} role="search"><Search size={17} /><input aria-label={`Caută în ${moduleName}`} minLength={2} onChange={(event) => setQuery(event.target.value)} placeholder={contractModule ? "Caută număr, titlu…" : "Caută dosar, obligație…"} value={query} /><kbd>⌘ K</kbd></form>
           <div className="topbar-actions">
-            <Link className="icon-button" href={contractModule ? "/contracts/notifications" : "/legal/notifications"} aria-label="Notificări"><Bell size={19} /></Link>
+            <NotificationBell href={contractModule ? "/contracts/notifications" : "/legal/notifications"} />
             <button className="profile-button" onClick={() => setShowConnection(true)} type="button"><span className="avatar"><UserRound size={17} /></span><span className="profile-copy"><strong>{user?.display_name ?? "Conectare"}</strong><small>{user?.roles[0]?.replaceAll("_", " ") ?? "Mediu local"}</small></span><ChevronDown size={15} /></button>
           </div>
         </header>

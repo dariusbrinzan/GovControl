@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     response_compression_minimum_size: int = 1000
     contracts_api_url: str = "http://127.0.0.1:8010/api/v1"
     service_request_timeout_seconds: float = 5.0
+    redis_url: str = "redis://127.0.0.1:6379/0"
+    event_stream_name: str = "govcontrol.events"
+    outbox_batch_size: int = 100
+    outbox_poll_interval_seconds: float = 2.0
 
     @property
     def cors_origins(self) -> list[str]:

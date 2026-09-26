@@ -190,10 +190,14 @@ class DocumentService:
         )
         self.session.add_all([document, version, link])
         self._audit(document, actor_id, "document.uploaded", {"checksum": checksum})
-        self._event(document, "document.uploaded.v1", {"version_id": str(version_id)})
+        self._event(
+            document, actor_id, "document.uploaded.v1", {"version_id": str(version_id)}
+        )
         if state == DocumentState.AVAILABLE:
             self._audit(document, actor_id, "document.scan_clean", None)
-            self._event(document, "document.available.v1", {"version_id": str(version_id)})
+            self._event(
+                document, actor_id, "document.available.v1", {"version_id": str(version_id)}
+            )
         if idempotency_key:
             self.session.add(
                 IdempotencyRecord(
@@ -275,9 +279,16 @@ class DocumentService:
         document.state = state
         self.session.add(version)
         self._audit(document, actor_id, "document.version_created", {"version": version_number})
-        self._event(document, "document.version_created.v1", {"version_id": str(version_id)})
+        self._event(
+            document,
+            actor_id,
+            "document.version_created.v1",
+            {"version_id": str(version_id)},
+        )
         if state == DocumentState.AVAILABLE:
-            self._event(document, "document.available.v1", {"version_id": str(version_id)})
+            self._event(
+                document, actor_id, "document.available.v1", {"version_id": str(version_id)}
+            )
         try:
             await self.session.commit()
         except IntegrityError as exc:
@@ -482,7 +493,7 @@ class DocumentService:
             raise ValueError(action)
         document.lock_version += 1
         self._audit(document, actor_id, f"document.{action}d", None)
-        self._event(document, event, None)
+        self._event(document, actor_id, event, None)
         await self.session.commit()
         return await self.get(tenant_id, document_id, include_deleted=True)
 
@@ -575,7 +586,11 @@ class DocumentService:
         )
 
     def _event(
-        self, document: Document, event_type: str, payload: dict[str, object] | None
+        self,
+        document: Document,
+        actor_id: uuid.UUID,
+        event_type: str,
+        payload: dict[str, object] | None,
     ) -> None:
         self.session.add(
             OutboxEvent(
@@ -583,6 +598,6 @@ class DocumentService:
                 event_type=event_type,
                 aggregate_type="Document",
                 aggregate_id=document.id,
-                payload=payload or {},
+                payload={"recipient_user_id": str(actor_id), **(payload or {})},
             )
         )

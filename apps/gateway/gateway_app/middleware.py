@@ -38,6 +38,13 @@ class RequestGuardMiddleware(BaseHTTPMiddleware):
         document_mutation = request.url.path.startswith("/api/v1/documents") and (
             request.method in {"POST", "PUT", "PATCH"}
         )
+        notification_request = request.url.path.startswith("/api/v1/notifications")
+        notification_mutation = notification_request and request.method in {
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE",
+        }
         origin = request.headers.get("origin")
         if (
             request.method in {"POST", "PUT", "PATCH", "DELETE"}
@@ -54,6 +61,8 @@ class RequestGuardMiddleware(BaseHTTPMiddleware):
                 body_limit = (
                     self.settings.max_document_upload_bytes
                     if document_mutation
+                    else self.settings.max_notification_payload_bytes
+                    if notification_request
                     else self.settings.max_request_body_bytes
                 )
                 if int(content_length) > body_limit:
@@ -72,7 +81,15 @@ class RequestGuardMiddleware(BaseHTTPMiddleware):
         cookie = request.cookies.get(self.settings.session_cookie_name, "anonymous")
         subject = hashlib.sha256(f"{client}:{cookie}".encode()).hexdigest()
         window = int(time.time()) // self.settings.rate_limit_window_seconds
-        rate_scope = "document-upload" if document_mutation else "general"
+        rate_scope = (
+            "document-upload"
+            if document_mutation
+            else "notification-mutation"
+            if notification_mutation
+            else "notification-read"
+            if notification_request
+            else "general"
+        )
         key = f"govcontrol:gateway:rate:{rate_scope}:{window}:{subject}"
         client_redis = request.app.state.redis
         try:
@@ -84,11 +101,14 @@ class RequestGuardMiddleware(BaseHTTPMiddleware):
                 {"detail": "Gateway rate limiting is unavailable."},
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-        limit = (
-            self.settings.document_upload_rate_limit_requests
-            if document_mutation
-            else self.settings.rate_limit_requests
-        )
+        if document_mutation:
+            limit = self.settings.document_upload_rate_limit_requests
+        elif notification_mutation:
+            limit = self.settings.notification_mutation_rate_limit_requests
+        elif notification_request:
+            limit = self.settings.notification_read_rate_limit_requests
+        else:
+            limit = self.settings.rate_limit_requests
         if count > limit:
             response = JSONResponse(
                 {"detail": "Rate limit exceeded."},

@@ -216,7 +216,11 @@ class ContractService:
                     event_type="contracts.contract.created.v1",
                     aggregate_type="Contract",
                     aggregate_id=item.id,
-                    payload={"contract_id": str(item.id), **payload},
+                    payload={
+                        "contract_id": str(item.id),
+                        "recipient_user_id": str(actor_id),
+                        **payload,
+                    },
                 ),
             ]
         )
@@ -264,7 +268,11 @@ class ContractService:
                     event_type="contracts.contract.status-changed.v1",
                     aggregate_type="Contract",
                     aggregate_id=item.id,
-                    payload={"contract_id": str(item.id), **payload},
+                    payload={
+                        "contract_id": str(item.id),
+                        "recipient_user_id": str(actor_id),
+                        **payload,
+                    },
                 ),
             ]
         )
@@ -669,7 +677,11 @@ class ContractService:
                     event_type=f"contracts.contract.{action}.v1",
                     aggregate_type="Contract",
                     aggregate_id=contract_id,
-                    payload={"contract_id": str(contract_id), **payload},
+                    payload={
+                        "contract_id": str(contract_id),
+                        "recipient_user_id": str(actor_id),
+                        **payload,
+                    },
                 ),
             ]
         )

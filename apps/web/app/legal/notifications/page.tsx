@@ -1,2 +1,5 @@
-import OperationalPage from "../../../components/legal/operational-page";
-export default function Page() { return <OperationalPage view="notifications" />; }
+import { NotificationCenter } from "../../../components/notifications/notification-center";
+
+export default function Page() {
+  return <NotificationCenter module="legal" />;
+}

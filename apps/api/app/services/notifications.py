@@ -3,10 +3,12 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from enum import StrEnum
 
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.legal import LegalObligation
 from app.models.notification import Notification, NotificationStatus
+from app.models.outbox import IntegrationOutboxEvent
 from app.repositories.legal import LegalRepository
 from app.repositories.notification import NotificationRepository
 from app.services.audit import AuditService
@@ -94,45 +96,41 @@ class NotificationService:
             key = f"deadline:{obligation.id}:{today.isoformat()}:{state.value}"
             candidates.append((obligation, state, key))
 
-        existing_keys = await self.repo.existing_deduplication_keys(
-            tenant_id, {key for _, _, key in candidates}
-        )
-        notifications: list[Notification] = []
+        values: list[dict[str, object]] = []
         for obligation, state, key in candidates:
-            if key in existing_keys:
-                continue
             if obligation.due_date is None:
                 continue
-            notification = Notification(
-                tenant_id=tenant_id,
-                recipient_user_id=obligation.responsible_user_id or actor_id,
-                entity_type="LegalObligation",
-                entity_id=obligation.id,
-                notification_type=f"DEADLINE_{state.value}",
-                title=self._deadline_title(state),
-                body=(
-                    f"Obligația „{obligation.description}” are termenul "
-                    f"{obligation.due_date.isoformat()}."
-                ),
-                due_date=obligation.due_date,
-                deduplication_key=key,
+            event_id = uuid.uuid5(
+                uuid.UUID("96ce90a0-8d50-4f50-a4d0-957aa309169d"), key
             )
-            notifications.append(notification)
-
-        if not notifications:
+            values.append(
+                {
+                    "id": event_id,
+                    "tenant_id": tenant_id,
+                    "event_type": (
+                        "legal.deadline.overdue.v1"
+                        if state == DeadlineState.OVERDUE
+                        else "legal.deadline.due-soon.v1"
+                    ),
+                    "aggregate_type": "LegalObligation",
+                    "aggregate_id": obligation.id,
+                    "payload": {
+                        "obligation_id": str(obligation.id),
+                        "recipient_user_id": str(obligation.responsible_user_id or actor_id),
+                        "due_date": obligation.due_date.isoformat(),
+                    },
+                }
+            )
+        if not values:
             return 0
-        self.session.add_all(notifications)
-        await self.session.flush()
-        for notification in notifications:
-            self.audit.record_created(
-                tenant_id=tenant_id,
-                actor_user_id=actor_id,
-                entity_type="Notification",
-                entity_id=notification.id,
-                new_value={"notification_type": notification.notification_type},
-            )
+        inserted = await self.session.scalars(
+            insert(IntegrationOutboxEvent)
+            .values(values)
+            .on_conflict_do_nothing(index_elements=["id"])
+            .returning(IntegrationOutboxEvent.id)
+        )
         await self.session.commit()
-        return len(notifications)
+        return len(inserted.all())
 
     @staticmethod
     def _deadline_title(state: DeadlineState) -> str:

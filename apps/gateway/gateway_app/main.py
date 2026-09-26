@@ -79,14 +79,18 @@ def create_application() -> FastAPI:
     async def ready() -> dict[Literal["status"], Literal["ready"]]:
         try:
             await app.state.redis.ping()
-            platform, contracts, documents = await asyncio.gather(
+            platform, contracts, documents, notifications = await asyncio.gather(
                 app.state.http_client.get(f"{settings.platform_api_url.rstrip('/')}/health"),
                 app.state.http_client.get(f"{settings.contracts_api_url.removesuffix('/api/v1')}/health"),
                 app.state.http_client.get(f"{settings.documents_api_url.removesuffix('/api/v1')}/health"),
+                app.state.http_client.get(
+                    f"{settings.notifications_api_url.removesuffix('/api/v1')}/health"
+                ),
             )
             platform.raise_for_status()
             contracts.raise_for_status()
             documents.raise_for_status()
+            notifications.raise_for_status()
         except (httpx.HTTPError, redis.RedisError) as exc:
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,

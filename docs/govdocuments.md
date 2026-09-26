@@ -114,3 +114,8 @@ These are local smoke results, not production benchmarks:
 
 Real sizing still requires representative storage latency, file mix, ClamAV capacity, TLS and
 production CPU/memory limits.
+
+The live browser suite uses `make web-test-e2e-live`. Its development-only cleanup removes records,
+audit/outbox rows, published Redis Stream messages and S3 objects identified by the reserved
+`e2e-` filename prefix or the `PERFORMANCE_SMOKE`/`SMOKE_TEST` categories before and after the run.
+The cleanup refuses outside `APP_ENV=development`.

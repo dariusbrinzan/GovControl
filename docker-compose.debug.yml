@@ -8,3 +8,6 @@ services:
   documents-api:
     ports:
       - "127.0.0.1:${DOCUMENTS_API_PORT:-8020}:8020"
+  notifications-api:
+    ports:
+      - "127.0.0.1:${NOTIFICATIONS_API_PORT:-8030}:8030"

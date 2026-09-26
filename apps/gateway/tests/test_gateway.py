@@ -108,6 +108,25 @@ async def test_local_login_proxy_csrf_request_id_and_logout(
             assert "x-tenant-id" not in observed_headers[-1]
             assert observed_headers[-1]["authorization"].startswith("Bearer eyJ")
 
+            notification_list = await client.get(
+                "/api/v1/notifications?limit=5",
+                headers={"X-Tenant-ID": "attacker-tenant"},
+            )
+            assert notification_list.status_code == 200
+            assert "x-tenant-id" not in observed_headers[-1]
+            assert observed_headers[-1]["authorization"].startswith("Bearer eyJ")
+            notification_id = "00000000-0000-0000-0000-000000000004"
+            notification_without_csrf = await client.patch(
+                f"/api/v1/notifications/{notification_id}/read"
+            )
+            assert notification_without_csrf.status_code == 403
+            notification_mutation = await client.patch(
+                f"/api/v1/notifications/{notification_id}/read",
+                headers={"X-CSRF-Token": csrf, "X-Tenant-ID": "attacker-tenant"},
+            )
+            assert notification_mutation.status_code == 200
+            assert "x-tenant-id" not in observed_headers[-1]
+
             oversized = await client.post(
                 "/api/v1/documents",
                 headers={"X-CSRF-Token": csrf},

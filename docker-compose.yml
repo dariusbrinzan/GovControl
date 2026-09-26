@@ -40,6 +40,25 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+  api-worker:
+    image: govcontrol-api:local
+    pull_policy: never
+    restart: unless-stopped
+    command: [".venv/bin/python", "-m", "app.worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
+      GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
+      REDIS_URL: redis://redis:6379/0
+      EVENT_STREAM_NAME: ${EVENT_STREAM_NAME:-govcontrol.events}
+    depends_on:
+      api-migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
   web:
     build:
       context: ./apps/web
@@ -177,6 +196,8 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-development}
       DOCUMENTS_DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
+      GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://object-storage:8333
       S3_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-govcontrol}
@@ -195,6 +216,93 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+  notifications-api:
+    build: ./apps/notifications-api
+    image: govcontrol-notifications-api:local
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      NOTIFICATIONS_DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
+      PLATFORM_API_URL: http://api:8000/api/v1
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
+      GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
+      REDIS_URL: redis://redis:6379/0
+      EVENT_STREAM_NAME: ${EVENT_STREAM_NAME:-govcontrol.events}
+      EMAIL_ENABLED: ${NOTIFICATIONS_EMAIL_ENABLED:-false}
+      EMAIL_ADAPTER: ${NOTIFICATIONS_EMAIL_ADAPTER:-local}
+      SMTP_HOST: ${NOTIFICATIONS_SMTP_HOST:-}
+      SMTP_PORT: ${NOTIFICATIONS_SMTP_PORT:-587}
+      SMTP_USERNAME: ${NOTIFICATIONS_SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${NOTIFICATIONS_SMTP_PASSWORD:-}
+      SMTP_FROM_ADDRESS: ${NOTIFICATIONS_SMTP_FROM_ADDRESS:-}
+    depends_on:
+      api:
+        condition: service_healthy
+      notifications-migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8030"
+    healthcheck:
+      test:
+        ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8030/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+  notifications-migrate:
+    image: govcontrol-notifications-api:local
+    pull_policy: never
+    command: [".venv/bin/alembic", "upgrade", "head"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      NOTIFICATIONS_DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
+      GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
+    depends_on:
+      postgres:
+        condition: service_healthy
+  notifications-worker:
+    image: govcontrol-notifications-api:local
+    pull_policy: never
+    restart: unless-stopped
+    command: [".venv/bin/python", "-m", "notifications_app.worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      NOTIFICATIONS_DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
+      GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
+      REDIS_URL: redis://redis:6379/0
+      EVENT_STREAM_NAME: ${EVENT_STREAM_NAME:-govcontrol.events}
+      DEAD_LETTER_STREAM_NAME: ${NOTIFICATIONS_DEAD_LETTER_STREAM_NAME:-govcontrol.notifications.dlq}
+      CONSUMER_GROUP: ${NOTIFICATIONS_CONSUMER_GROUP:-govnotifications-v1}
+      MAX_DELIVERY_ATTEMPTS: ${NOTIFICATIONS_MAX_DELIVERY_ATTEMPTS:-5}
+    depends_on:
+      notifications-migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  notifications-scheduler:
+    image: govcontrol-notifications-api:local
+    pull_policy: never
+    restart: unless-stopped
+    command: [".venv/bin/python", "-m", "notifications_app.scheduler"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      NOTIFICATIONS_DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
+      GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
+      RETENTION_DAYS: ${NOTIFICATIONS_RETENTION_DAYS:-365}
+    depends_on:
+      notifications-migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
   gateway:
     build: ./apps/gateway
     image: govcontrol-gateway:local
@@ -206,6 +314,7 @@ services:
       PLATFORM_API_URL: http://api:8000/api/v1
       CONTRACTS_API_URL: http://contracts-api:8010/api/v1
       DOCUMENTS_API_URL: http://documents-api:8020/api/v1
+      NOTIFICATIONS_API_URL: http://notifications-api:8030/api/v1
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
       GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
       SESSION_SIGNING_SECRET: ${SESSION_SIGNING_SECRET:-govcontrol-local-session-signing-change-me}
@@ -222,6 +331,10 @@ services:
       MAX_DOCUMENT_UPLOAD_BYTES: ${GATEWAY_MAX_DOCUMENT_UPLOAD_BYTES:-27262976}
       DOCUMENT_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_DOCUMENT_REQUEST_TIMEOUT_SECONDS:-60}
       DOCUMENT_UPLOAD_RATE_LIMIT_REQUESTS: ${GATEWAY_DOCUMENT_UPLOAD_RATE_LIMIT_REQUESTS:-30}
+      MAX_NOTIFICATION_PAYLOAD_BYTES: ${GATEWAY_MAX_NOTIFICATION_PAYLOAD_BYTES:-262144}
+      NOTIFICATION_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_NOTIFICATION_REQUEST_TIMEOUT_SECONDS:-10}
+      NOTIFICATION_READ_RATE_LIMIT_REQUESTS: ${GATEWAY_NOTIFICATION_READ_RATE_LIMIT_REQUESTS:-180}
+      NOTIFICATION_MUTATION_RATE_LIMIT_REQUESTS: ${GATEWAY_NOTIFICATION_MUTATION_RATE_LIMIT_REQUESTS:-60}
       OIDC_ISSUER: ${OIDC_ISSUER:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
@@ -232,6 +345,8 @@ services:
       contracts-api:
         condition: service_healthy
       documents-api:
+        condition: service_healthy
+      notifications-api:
         condition: service_healthy
       redis:
         condition: service_healthy

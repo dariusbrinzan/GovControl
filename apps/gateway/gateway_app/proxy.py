@@ -55,6 +55,10 @@ POLICIES = {
         base_url_setting="documents_api_url",
         roots={"documents": frozenset({"GET", "POST", "PATCH", "DELETE"})},
     ),
+    "notifications": UpstreamPolicy(
+        base_url_setting="notifications_api_url",
+        roots={"notifications": frozenset({"GET", "POST", "PUT", "PATCH"})},
+    ),
 }
 
 
@@ -90,6 +94,26 @@ async def documents_proxy(document_path: str, request: Request) -> Response:
 
 
 @router.api_route(
+    "/notifications",
+    methods=["GET", "POST", "PUT", "PATCH"],
+    include_in_schema=False,
+)
+async def notifications_root(request: Request) -> Response:
+    return await proxy_request("notifications", "notifications", request)
+
+
+@router.api_route(
+    "/notifications/{notification_path:path}",
+    methods=["GET", "POST", "PUT", "PATCH"],
+    include_in_schema=False,
+)
+async def notifications_proxy(notification_path: str, request: Request) -> Response:
+    return await proxy_request(
+        "notifications", f"notifications/{notification_path}", request
+    )
+
+
+@router.api_route(
     "/{service}/{path:path}",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     include_in_schema=False,
@@ -105,11 +129,12 @@ async def proxy_request(service: str, path: str, request: Request) -> Response:
     if request.method in MUTATING_METHODS:
         require_csrf(session, request.headers.get("X-CSRF-Token"))
 
-    body_limit = (
-        settings.max_document_upload_bytes
-        if service == "documents" and request.method in MUTATING_METHODS
-        else settings.max_request_body_bytes
-    )
+    if service == "documents" and request.method in MUTATING_METHODS:
+        body_limit = settings.max_document_upload_bytes
+    elif service == "notifications":
+        body_limit = settings.max_notification_payload_bytes
+    else:
+        body_limit = settings.max_request_body_bytes
 
     async def limited_body() -> AsyncIterator[bytes]:
         received = 0
@@ -139,6 +164,11 @@ async def proxy_request(service: str, path: str, request: Request) -> Response:
         if service == "documents":
             upstream_request.extensions["timeout"] = httpx.Timeout(
                 settings.document_request_timeout_seconds,
+                connect=settings.connect_timeout_seconds,
+            ).as_dict()
+        elif service == "notifications":
+            upstream_request.extensions["timeout"] = httpx.Timeout(
+                settings.notification_request_timeout_seconds,
                 connect=settings.connect_timeout_seconds,
             ).as_dict()
         upstream = await request.app.state.http_client.send(upstream_request, stream=True)

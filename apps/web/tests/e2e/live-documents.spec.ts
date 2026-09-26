@@ -38,6 +38,8 @@ test("GovDocuments gestionează upload, download, versiuni, audit și restaurare
 
   await page.getByRole("button", { name: "Șterge" }).click();
   await expect(page.getByRole("button", { name: "Restaurează" })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Restaurează" })).toBeVisible();
   await page.getByRole("button", { name: "Restaurează" }).click();
   await expect(page.getByRole("button", { name: "Șterge" })).toBeVisible();
   await page.getByRole("button", { name: "Șterge" }).click();
@@ -52,6 +54,7 @@ test("Gateway blochează mutațiile fără CSRF și ignoră tenantul furnizat de
   await page.getByRole("button", { name: "Conectează aplicația" }).click();
   const loginResponse = await loginResponsePromise;
   expect(loginResponse.status()).toBe(200);
+  const { csrf_token: csrfToken } = (await loginResponse.json()) as { csrf_token: string };
   const gatewayOrigin = new URL(loginResponse.url()).origin;
 
   const listResponse = await page.request.get(`${gatewayOrigin}/api/v1/documents?page_size=1`, {
@@ -70,6 +73,17 @@ test("Gateway blochează mutațiile fără CSRF și ignoră tenantul furnizat de
     },
   });
   expect(forbidden.status()).toBe(403);
+
+  const unavailableResource = await page.request.post(`${gatewayOrigin}/api/v1/documents`, {
+    headers: { "X-CSRF-Token": csrfToken },
+    multipart: {
+      resource_type: "LegalCase",
+      resource_id: "00000000-0000-0000-0000-000000000099",
+      category: "E2E",
+      file: { name: "unknown-resource.txt", mimeType: "text/plain", buffer: Buffer.from("blocked") },
+    },
+  });
+  expect(unavailableResource.status()).toBe(404);
 });
 
 test("GovContracts atașează un document prin GovDocuments", async ({ page }) => {

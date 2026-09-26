@@ -109,6 +109,11 @@ async def list_documents(
     resource_id: uuid.UUID | None = None,
     include_deleted: bool = False,
 ) -> DocumentPage:
+    if include_deleted and "documents.delete" not in user.permissions:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Document deletion permission is required to inspect deleted records.",
+        )
     if resource_type is not None and resource_id is not None:
         await validate_resource(
             request, settings, authorization, user.tenant_id, resource_type, resource_id
@@ -177,9 +182,17 @@ async def get_document(
     response: Response,
     user: Reader,
     documents: Service,
+    include_deleted: bool = False,
 ) -> DocumentResponse:
+    if include_deleted and "documents.delete" not in user.permissions:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Document deletion permission is required to inspect deleted records.",
+        )
     try:
-        result = await documents.get(user.tenant_id, document_id)
+        result = await documents.get(
+            user.tenant_id, document_id, include_deleted=include_deleted
+        )
     except (DocumentNotFoundError, DocumentUnavailableError) as exc:
         raise service_error(exc) from exc
     response.headers["ETag"] = etag(result.lock_version)
@@ -194,7 +207,11 @@ async def document_versions(
     documents: Service,
 ) -> list[DocumentVersionResponse]:
     try:
-        await documents.get(user.tenant_id, document_id)
+        await documents.get(
+            user.tenant_id,
+            document_id,
+            include_deleted="documents.delete" in user.permissions,
+        )
     except (DocumentNotFoundError, DocumentUnavailableError) as exc:
         raise service_error(exc) from exc
     versions = list(
