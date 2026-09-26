@@ -35,6 +35,16 @@ test("navigarea deschide registrul de obligații", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Obligații instituționale" })).toBeVisible();
 });
 
+test("o sesiune revocată revine la ecranul de autentificare", async ({ page }) => {
+  await mockSession(page);
+  await page.route("**/api/v1/platform/legal/analytics/**", (route) =>
+    route.fulfill({ status: 401, json: { detail: "Authentication is required." } }),
+  );
+  await page.goto("/legal");
+  await expect(page.getByRole("dialog", { name: "Conectează spațiul de lucru" })).toBeVisible();
+  await expect(page.getByText("Sesiunea a expirat sau a fost revocată.", { exact: false })).toBeVisible();
+});
+
 test("GovContracts afișează dashboard-ul și registrul din serviciul separat", async ({ page }) => {
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));

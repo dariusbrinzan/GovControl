@@ -182,8 +182,8 @@ function sessionExpired(response: Response) {
   }
 }
 
-async function responseError(response: Response): Promise<ApiError> {
-  sessionExpired(response);
+async function responseError(response: Response, notifySession = true): Promise<ApiError> {
+  if (notifySession) sessionExpired(response);
   const body = await response.json().catch(() => null);
   return new ApiError(body?.detail ?? `API request failed (${response.status})`, response.status);
 }
@@ -200,7 +200,7 @@ export async function gatewayAuthConfig(): Promise<{ mode: "local" | "oidc"; log
     credentials: "include",
     cache: "no-store",
   });
-  if (!response.ok) throw await responseError(response);
+  if (!response.ok) throw await responseError(response, false);
   return response.json() as Promise<{ mode: "local" | "oidc"; login_url: string }>;
 }
 
@@ -209,7 +209,7 @@ export async function gatewaySession(): Promise<GatewaySession> {
     credentials: "include",
     cache: "no-store",
   });
-  if (!response.ok) throw await responseError(response);
+  if (!response.ok) throw await responseError(response, false);
   return response.json() as Promise<GatewaySession>;
 }
 

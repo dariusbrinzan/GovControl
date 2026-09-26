@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import jwt
 import pytest
@@ -10,7 +10,12 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from app.core.config import Settings
 from app.core.observability import request_id_from_header
-from app.core.security import AuthenticatedUser, get_current_user, require_internal_service
+from app.core.security import (
+    AuthenticatedUser,
+    get_current_user,
+    load_user_context,
+    require_internal_service,
+)
 from app.db.session import AsyncSession
 
 
@@ -61,6 +66,7 @@ def test_production_requires_internal_service_secret() -> None:
         Settings(
             app_env="production",
             database_url="postgresql+asyncpg://user:password@localhost:5432/test",
+            internal_service_token="",
         )
 
 
@@ -79,6 +85,7 @@ def test_production_requires_gateway_assertion_and_oidc_issuer() -> None:
             app_env="production",
             database_url="postgresql+asyncpg://user:password@localhost:5432/test",
             internal_service_token="i" * 40,
+            gateway_assertion_secret="",
         )
     with pytest.raises(ValueError, match="OIDC_TRUSTED_ISSUERS"):
         Settings(
@@ -86,6 +93,7 @@ def test_production_requires_gateway_assertion_and_oidc_issuer() -> None:
             database_url="postgresql+asyncpg://user:password@localhost:5432/test",
             internal_service_token="i" * 40,
             gateway_assertion_secret="g" * 40,
+            oidc_trusted_issuers="",
         )
 
 
@@ -157,6 +165,23 @@ async def test_gateway_assertion_uses_only_signed_user_and_tenant_claims(
 
     assert result == expected
     loader.assert_awaited_once_with(session, user_id, tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_user_context_rejects_identity_from_another_tenant() -> None:
+    user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    asserted_tenant_id = uuid.UUID("00000000-0000-0000-0000-000000000099")
+    session = MagicMock(spec=AsyncSession)
+    session.scalar = AsyncMock(return_value=None)
+
+    with pytest.raises(HTTPException) as exception_info:
+        await load_user_context(session, user_id, asserted_tenant_id)
+
+    statement = session.scalar.await_args.args[0]
+    bound_values = set(statement.compile().params.values())
+    assert user_id in bound_values
+    assert asserted_tenant_id in bound_values
+    assert exception_info.value.status_code == 401
 
 
 def test_request_id_accepts_uuid_and_replaces_invalid_value() -> None:

@@ -64,6 +64,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const disconnect = useCallback(async () => {
     try {
       if (token) await gatewayLogout(token);
+      setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Deconectarea nu a reușit.");
     } finally {
@@ -87,7 +88,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         if (active) setReady(true);
       }
     };
-    const expired = () => clearSession();
+    const expired = () => {
+      clearSession();
+      setError("Sesiunea a expirat sau a fost revocată. Autentifică-te din nou.");
+    };
     window.addEventListener("govcontrol:session-expired", expired);
     void restore();
     return () => {
