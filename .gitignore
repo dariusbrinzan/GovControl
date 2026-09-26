@@ -19,6 +19,9 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 
+# Runtime document objects (existing tracked demo fixtures remain tracked).
+data/documents/*/*
+
 # OS / editor
 .DS_Store
 .idea/

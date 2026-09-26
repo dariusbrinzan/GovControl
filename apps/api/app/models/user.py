@@ -12,7 +12,12 @@ class User(Base):
     """A tenant-scoped user identity, independent from the future authentication provider."""
 
     __tablename__ = "users"
-    __table_args__ = (UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "email", name="uq_users_tenant_email"),
+        UniqueConstraint(
+            "external_issuer", "external_subject", name="uq_users_external_identity"
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -25,6 +30,7 @@ class User(Base):
         index=True,
     )
     external_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    external_issuer: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     email: Mapped[str] = mapped_column(String(320), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(

@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated
 
+import jwt
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
@@ -60,7 +61,27 @@ async def get_current_user(
     session: SessionDependency,
     credentials: CredentialsDependency,
 ) -> AuthenticatedUser:
-    """Authenticate the configured local developer identity in development only."""
+    """Authenticate a short-lived gateway assertion or the local developer identity."""
+    if credentials is not None and credentials.credentials.count(".") == 2:
+        if settings.gateway_assertion_secret is None:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication is required.")
+        try:
+            claims = jwt.decode(
+                credentials.credentials,
+                settings.gateway_assertion_secret.get_secret_value(),
+                algorithms=["HS256"],
+                audience=settings.gateway_assertion_audience,
+                issuer=settings.gateway_assertion_issuer,
+                options={"require": ["exp", "iat", "nbf", "iss", "aud", "sub", "tenant_id"]},
+            )
+            asserted_user_id = uuid.UUID(claims["sub"])
+            asserted_tenant_id = uuid.UUID(claims["tenant_id"])
+        except (jwt.InvalidTokenError, KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED, "Authentication is required."
+            ) from exc
+        return await load_user_context(session, asserted_user_id, asserted_tenant_id)
+
     configured_token = settings.dev_auth_token
     if (
         settings.app_env != "development"
@@ -100,6 +121,28 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    return await build_user_context(session, user)
+
+
+async def load_user_context(
+    session: AsyncSession, user_id: uuid.UUID, tenant_id: uuid.UUID
+) -> AuthenticatedUser:
+    user = await session.scalar(
+        select(User)
+        .join(Tenant, Tenant.id == User.tenant_id)
+        .where(
+            User.id == user_id,
+            User.tenant_id == tenant_id,
+            User.is_active.is_(True),
+            Tenant.is_active.is_(True),
+        )
+    )
+    if user is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication is required.")
+    return await build_user_context(session, user)
+
+
+async def build_user_context(session: AsyncSession, user: User) -> AuthenticatedUser:
     permission_keys = await session.scalars(
         select(Permission.key)
         .join(RolePermission, RolePermission.permission_id == Permission.id)

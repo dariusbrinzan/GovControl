@@ -1,4 +1,4 @@
-.PHONY: api-check api-dev api-test contracts-check contracts-dev contracts-migrate contracts-test db-migrate db-up db-down db-logs db-seed db-status platform-up web-build web-check web-dev web-test web-test-e2e
+.PHONY: api-check api-dev api-test contracts-check contracts-dev contracts-migrate contracts-seed contracts-test contracts-worker db-migrate db-up db-down db-logs db-seed db-status gateway-check gateway-dev gateway-test platform-up stack-check stack-down stack-logs stack-status stack-up stack-up-debug web-build web-check web-dev web-test web-test-e2e web-test-e2e-live
 
 api-dev:
 	cd apps/api && uv run uvicorn app.main:app --reload
@@ -21,6 +21,21 @@ contracts-check:
 contracts-migrate:
 	cd apps/contracts-api && uv run alembic upgrade head
 
+contracts-seed:
+	cd apps/contracts-api && uv run python -m contracts_app.seed
+
+contracts-worker:
+	cd apps/contracts-api && uv run python -m contracts_app.worker
+
+gateway-dev:
+	cd apps/gateway && uv run uvicorn gateway_app.main:app --reload --port 8080
+
+gateway-test:
+	cd apps/gateway && uv run pytest
+
+gateway-check:
+	cd apps/gateway && uv run ruff check . && uv run mypy gateway_app && uv run pytest
+
 web-dev:
 	cd apps/web && npm run dev
 
@@ -36,6 +51,9 @@ web-test:
 web-test-e2e:
 	cd apps/web && npm run test:e2e
 
+web-test-e2e-live:
+	set -a; . ./.env; set +a; cd apps/web && npm run test:e2e -- live-contracts.spec.ts live-legal.spec.ts
+
 db-migrate:
 	cd apps/api && uv run alembic upgrade head
 
@@ -46,13 +64,31 @@ db-up:
 	docker compose up -d postgres
 
 platform-up:
-	docker compose up -d postgres redis minio
+	docker compose up -d postgres redis object-storage
 
 db-down:
-	docker compose down
+	docker compose stop postgres
 
 db-logs:
 	docker compose logs -f postgres
 
 db-status:
 	docker compose ps
+
+stack-up:
+	docker compose up -d --build
+
+stack-up-debug:
+	docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d --build
+
+stack-down:
+	docker compose down
+
+stack-status:
+	docker compose ps -a
+
+stack-logs:
+	docker compose logs -f gateway api contracts-api contracts-worker web
+
+stack-check:
+	set -a; . ./.env; set +a; curl -fsS "http://127.0.0.1:$${GATEWAY_PORT:-8080}/ready"; curl -fsS "http://127.0.0.1:$${WEB_PORT:-3000}/" >/dev/null

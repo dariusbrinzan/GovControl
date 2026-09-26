@@ -1,9 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-const token = process.env.DEV_AUTH_TOKEN;
-
 test("fluxul GovContracts real afișează datele agregate și fișa completă", async ({ page }) => {
-  test.skip(!token, "DEV_AUTH_TOKEN is required for the live local integration test.");
   const browserErrors: string[] = [];
   const failedApiCalls: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
@@ -12,9 +9,9 @@ test("fluxul GovContracts real afișează datele agregate și fișa completă", 
       failedApiCalls.push(`${response.status()} ${response.url()}`);
     }
   });
-  await page.goto("/");
-  await page.evaluate((value) => window.localStorage.setItem("govcontrol.dev-token", value), token!);
   await page.goto("/contracts");
+  await page.getByRole("button", { name: "Conectează aplicația" }).click();
+  await expect(page.getByRole("button", { name: /GovControl Development Admin/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Controlul contractelor instituției" })).toBeVisible();
   await expect(page.getByText("Contracte active", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Registru contracte" }).click();
@@ -32,7 +29,15 @@ test("fluxul GovContracts real afișează datele agregate și fișa completă", 
   await page.getByRole("button", { name: "Editează contract" }).click();
   await expect(page.getByLabel("Departament responsabil")).toHaveValue(/.*/);
   await expect(page.getByLabel("Departament responsabil").locator("option")).not.toHaveCount(1);
-  await page.getByRole("button", { name: "Renunță" }).click();
+  const originalTitle = await page.getByLabel("Titlu").inputValue();
+  const changedTitle = `${originalTitle} [E2E]`;
+  await page.getByLabel("Titlu").fill(changedTitle);
+  await page.getByRole("button", { name: "Salvează modificările" }).click();
+  await expect(page.getByText(changedTitle, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Editează contract" }).click();
+  await page.getByLabel("Titlu").fill(originalTitle);
+  await page.getByRole("button", { name: "Salvează modificările" }).click();
+  await expect(page.getByText(originalTitle, { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Jurnal de audit" }).click();
   await expect(page.getByRole("heading", { name: "Jurnal audit GovContracts" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Request ID" })).toBeVisible();

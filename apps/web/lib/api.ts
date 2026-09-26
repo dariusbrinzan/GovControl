@@ -166,68 +166,122 @@ export type LegalSearchResult = {
 
 export type LegalSearchResponse = { results: LegalSearchResult[] };
 
-const apiBaseUrl =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8000/api/v1";
+const gatewayBaseUrl =
+  process.env.NEXT_PUBLIC_GATEWAY_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8080";
+const apiBaseUrl = `${gatewayBaseUrl}/api/v1/platform`;
 
-export async function apiGet<T>(path: string, token: string): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
+function sessionExpired(response: Response) {
+  if (response.status === 401 && typeof window !== "undefined") {
+    window.dispatchEvent(new Event("govcontrol:session-expired"));
+  }
+}
+
+async function responseError(response: Response): Promise<ApiError> {
+  sessionExpired(response);
+  const body = await response.json().catch(() => null);
+  return new ApiError(body?.detail ?? `API request failed (${response.status})`, response.status);
+}
+
+export type GatewaySession = {
+  user: AuthenticatedUser;
+  csrf_token: string;
+  expires_at: string;
+  auth_method: "local" | "oidc";
+};
+
+export async function gatewayAuthConfig(): Promise<{ mode: "local" | "oidc"; login_url: string }> {
+  const response = await fetch(`${gatewayBaseUrl}/auth/config`, {
+    credentials: "include",
     cache: "no-store",
   });
-  if (!response.ok) {
-    const body = await response.json().catch(() => null);
-    throw new Error(body?.detail ?? `API request failed (${response.status})`);
-  }
+  if (!response.ok) throw await responseError(response);
+  return response.json() as Promise<{ mode: "local" | "oidc"; login_url: string }>;
+}
+
+export async function gatewaySession(): Promise<GatewaySession> {
+  const response = await fetch(`${gatewayBaseUrl}/auth/session`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!response.ok) throw await responseError(response);
+  return response.json() as Promise<GatewaySession>;
+}
+
+export async function gatewayLocalLogin(): Promise<GatewaySession> {
+  const response = await fetch(`${gatewayBaseUrl}/auth/local/login`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) throw await responseError(response);
+  return response.json() as Promise<GatewaySession>;
+}
+
+export function gatewayLoginUrl(): string {
+  return `${gatewayBaseUrl}/auth/login`;
+}
+
+export async function gatewayLogout(csrfToken: string): Promise<void> {
+  const response = await fetch(`${gatewayBaseUrl}/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "X-CSRF-Token": csrfToken },
+  });
+  if (!response.ok) throw await responseError(response);
+}
+
+export async function apiGet<T>(path: string, _csrfToken: string): Promise<T> {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    credentials: "include",
+    cache: "no-store",
+  });
+  if (!response.ok) throw await responseError(response);
   return response.json() as Promise<T>;
 }
 
-export async function apiPatch<T>(path: string, token: string, body: unknown): Promise<T> {
+export async function apiPatch<T>(path: string, csrfToken: string, body: unknown): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: "PATCH",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    credentials: "include",
+    headers: { "X-CSRF-Token": csrfToken, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    throw new Error(payload?.detail ?? `API request failed (${response.status})`);
-  }
+  if (!response.ok) throw await responseError(response);
   return response.json() as Promise<T>;
 }
 
-export async function apiPost<T>(path: string, token: string, body: unknown): Promise<T> {
+export async function apiPost<T>(path: string, csrfToken: string, body: unknown): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    credentials: "include",
+    headers: { "X-CSRF-Token": csrfToken, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    throw new Error(payload?.detail ?? `API request failed (${response.status})`);
-  }
+  if (!response.ok) throw await responseError(response);
   return response.json() as Promise<T>;
 }
 
-export async function apiUpload<T>(path: string, token: string, body: FormData): Promise<T> {
+export async function apiUpload<T>(path: string, csrfToken: string, body: FormData): Promise<T> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: "include",
+    headers: { "X-CSRF-Token": csrfToken },
     body,
   });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    throw new Error(payload?.detail ?? `API request failed (${response.status})`);
-  }
+  if (!response.ok) throw await responseError(response);
   return response.json() as Promise<T>;
 }
 
-export async function apiDownload(path: string, token: string): Promise<Blob> {
+export async function apiDownload(path: string, _csrfToken: string): Promise<Blob> {
   const response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    credentials: "include",
   });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => null);
-    throw new Error(payload?.detail ?? `API request failed (${response.status})`);
-  }
+  if (!response.ok) throw await responseError(response);
   return response.blob();
 }
 

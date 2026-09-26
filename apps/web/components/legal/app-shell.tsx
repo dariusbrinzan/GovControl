@@ -77,11 +77,10 @@ const pageNames: Record<string, string> = {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, ready, error, connect, disconnect } = useSession();
+  const { user, ready, error, authMode, connect, disconnect } = useSession();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [showConnection, setShowConnection] = useState(false);
-  const [draftToken, setDraftToken] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [query, setQuery] = useState("");
   const contractModule = pathname.startsWith("/contracts");
@@ -93,12 +92,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => setMobileOpen(false), [pathname]);
   const connectionVisible = showConnection || (ready && !user);
 
-  const submitToken = async (event: FormEvent) => {
+  const submitLogin = async (event: FormEvent) => {
     event.preventDefault();
     setConnecting(true);
     try {
-      await connect(draftToken);
-      setDraftToken("");
+      await connect();
       setShowConnection(false);
     } catch {
       // Error is exposed by the session provider.
@@ -165,7 +163,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {user ? <button className="modal-close icon-button" onClick={() => setShowConnection(false)} aria-label="Închide"><X size={18} /></button> : null}
         <span className="modal-icon"><Settings size={22} /></span>
         <p className="eyebrow">Conexiune securizată</p><h2 id="connection-title">{user ? "Sesiune locală activă" : "Conectează spațiul de lucru"}</h2>
-        {user ? <><div className="session-summary"><strong>{user.display_name}</strong><span>{user.email}</span><small>{user.permissions.length} permisiuni active</small></div><div className="modal-actions"><button className="button secondary" onClick={() => setShowConnection(false)}>Continuă</button><button className="button danger-ghost" onClick={disconnect}>Deconectează</button></div></> : <form onSubmit={submitToken}><label htmlFor="session-token">DEV_AUTH_TOKEN</label><input autoFocus id="session-token" onChange={(event) => setDraftToken(event.target.value)} placeholder="Tokenul din fișierul .env" type="password" value={draftToken} /><p>Tokenul rămâne doar în browserul local și este trimis direct API-ului.</p>{error ? <div className="inline-error" role="alert">{error}</div> : null}<button className="button primary" disabled={connecting} type="submit">{connecting ? "Se verifică…" : "Conectează aplicația"}</button></form>}
+        {user ? <><div className="session-summary"><strong>{user.display_name}</strong><span>{user.email}</span><small>{user.permissions.length} permisiuni active</small></div><div className="modal-actions"><button className="button secondary" onClick={() => setShowConnection(false)}>Continuă</button><button className="button danger-ghost" onClick={() => void disconnect()}>Deconectează</button></div></> : <form onSubmit={submitLogin}><p>{authMode === "oidc" ? "Autentificarea continuă prin furnizorul instituției. Datele de acces nu sunt stocate în browser." : "Gateway-ul va crea o sesiune locală securizată. Tokenul de dezvoltare rămâne exclusiv pe server."}</p>{error ? <div className="inline-error" role="alert">{error}</div> : null}<button autoFocus className="button primary" disabled={connecting} type="submit">{connecting ? "Se verifică…" : authMode === "oidc" ? "Continuă cu SSO" : "Conectează aplicația"}</button></form>}
       </section></div> : null}
     </div>
   );

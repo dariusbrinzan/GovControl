@@ -78,20 +78,23 @@ export type ContractAuditPage = {
 };
 
 const contractsApiBase =
-  process.env.NEXT_PUBLIC_CONTRACTS_API_URL?.replace(/\/$/, "") ??
-  "http://127.0.0.1:8010/api/v1";
+  `${process.env.NEXT_PUBLIC_GATEWAY_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8080"}/api/v1/govcontracts`;
 
-async function request<T>(path: string, token: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, csrfToken: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${contractsApiBase}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
-      Authorization: `Bearer ${token}`,
+      ...(init?.method && init.method !== "GET" ? { "X-CSRF-Token": csrfToken } : {}),
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
       ...init?.headers,
     },
     cache: "no-store",
   });
   if (!response.ok) {
+    if (response.status === 401 && typeof window !== "undefined") {
+      window.dispatchEvent(new Event("govcontrol:session-expired"));
+    }
     const payload = await response.json().catch(() => null);
     throw new Error(payload?.detail ?? `GovContracts request failed (${response.status})`);
   }

@@ -5,7 +5,7 @@ export default defineConfig([
   ...nextVitals,
   {
     rules: {
-      // Client-side authenticated fetching starts after localStorage hydration.
+      // Client-side authenticated fetching starts after gateway session restoration.
       "react-hooks/set-state-in-effect": "off",
     },
   },

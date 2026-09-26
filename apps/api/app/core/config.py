@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     dev_auth_token: SecretStr | None = None
     dev_auth_email: str | None = None
     internal_service_token: SecretStr | None = None
+    gateway_assertion_secret: SecretStr | None = None
+    gateway_assertion_issuer: str = "govcontrol-gateway"
+    gateway_assertion_audience: str = "govcontrol-services"
+    oidc_trusted_issuers: str = ""
+    federated_email_linking_enabled: bool = False
     document_storage_backend: Literal["local", "s3"] = "local"
     document_storage_path: Path = PROJECT_ROOT / "data" / "documents"
     s3_endpoint_url: str = "http://127.0.0.1:9000"
@@ -50,6 +55,14 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_allowed_origins.split(",") if origin.strip()]
 
+    @property
+    def trusted_oidc_issuers(self) -> frozenset[str]:
+        return frozenset(
+            issuer.strip().rstrip("/")
+            for issuer in self.oidc_trusted_issuers.split(",")
+            if issuer.strip()
+        )
+
     @model_validator(mode="after")
     def validate_production_secrets(self) -> "Settings":
         if self.app_env != "production":
@@ -65,6 +78,22 @@ class Settings(BaseSettings):
             or service_token.startswith("replace-with")
         ):
             raise ValueError("a strong INTERNAL_SERVICE_TOKEN is required in production")
+        assertion_secret = (
+            self.gateway_assertion_secret.get_secret_value()
+            if self.gateway_assertion_secret is not None
+            else ""
+        )
+        if (
+            len(assertion_secret) < 32
+            or "change-me" in assertion_secret
+            or assertion_secret.startswith("replace-with")
+            or assertion_secret.startswith("govcontrol-local-")
+        ):
+            raise ValueError("a strong GATEWAY_ASSERTION_SECRET is required in production")
+        if not self.trusted_oidc_issuers or any(
+            not issuer.startswith("https://") for issuer in self.trusted_oidc_issuers
+        ):
+            raise ValueError("HTTPS OIDC_TRUSTED_ISSUERS are required in production")
         if self.document_storage_backend == "s3":
             storage_secret = self.s3_secret_key.get_secret_value()
             if (

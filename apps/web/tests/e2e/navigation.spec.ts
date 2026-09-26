@@ -1,21 +1,33 @@
 import { expect, test } from "@playwright/test";
 
+const user = {
+  id: "00000000-0000-0000-0000-000000000001",
+  tenant_id: "00000000-0000-0000-0000-000000000002",
+  department_id: null,
+  email: "test@govcontrol.local",
+  display_name: "Test User",
+  roles: ["platform_admin"],
+  permissions: ["legal.manage", "legal.report", "contracts.manage", "contracts.report"],
+};
+
+async function mockSession(page: import("@playwright/test").Page, authenticated = true) {
+  await page.route("**/auth/config", (route) => route.fulfill({ json: { mode: "local", login_url: "/auth/login" } }));
+  await page.route("**/auth/session", (route) => authenticated
+    ? route.fulfill({ json: { user, csrf_token: "csrf-token", expires_at: "2026-09-26T00:00:00Z", auth_method: "local" } })
+    : route.fulfill({ status: 401, json: { detail: "Authentication is required." } }));
+}
+
 test("shell-ul instituțional și conectarea sunt accesibile", async ({ page }) => {
+  await mockSession(page, false);
   await page.goto("/legal");
   await expect(page.getByRole("heading", { name: "Panou de control juridic" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Navigare GovLegal" })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "Conectează spațiul de lucru" })).toBeVisible();
-  await expect(page.getByLabel("DEV_AUTH_TOKEN")).toBeFocused();
+  await expect(page.getByRole("button", { name: "Conectează aplicația" })).toBeFocused();
 });
 
 test("navigarea deschide registrul de obligații", async ({ page }) => {
-  await page.route("**/api/v1/auth/me", (route) => route.fulfill({ json: {
-    id: "00000000-0000-0000-0000-000000000001", tenant_id: "00000000-0000-0000-0000-000000000002",
-    department_id: null, email: "test@govcontrol.local", display_name: "Test User",
-    roles: ["legal_officer"], permissions: ["legal.manage", "legal.report"],
-  } }));
-  await page.goto("/");
-  await page.evaluate(() => window.localStorage.setItem("govcontrol.dev-token", "test-token"));
+  await mockSession(page);
   await page.goto("/legal");
   await expect(page.getByRole("button", { name: /Test User/ })).toBeVisible();
   await page.getByRole("link", { name: "Obligații", exact: true }).click();
@@ -26,16 +38,8 @@ test("navigarea deschide registrul de obligații", async ({ page }) => {
 test("GovContracts afișează dashboard-ul și registrul din serviciul separat", async ({ page }) => {
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
-  await page.route("**/api/v1/auth/me", (route) => route.fulfill({ json: {
-    id: "00000000-0000-0000-0000-000000000001",
-    tenant_id: "00000000-0000-0000-0000-000000000002",
-    department_id: null,
-    email: "contracts@govcontrol.local",
-    display_name: "Manager Contracte",
-    roles: ["contracts_manager"],
-    permissions: ["contracts.manage", "contracts.report"],
-  } }));
-  await page.route("http://127.0.0.1:8010/api/v1/contracts**", (route) => {
+  await mockSession(page);
+  await page.route("**/api/v1/govcontracts/contracts**", (route) => {
     if (route.request().url().endsWith("/dashboard")) {
       return route.fulfill({ json: {
         total_contracts: 1,
@@ -68,8 +72,6 @@ test("GovContracts afișează dashboard-ul și registrul din serviciul separat",
     }
     return route.fulfill({ json: items });
   });
-  await page.goto("/");
-  await page.evaluate(() => window.localStorage.setItem("govcontrol.dev-token", "test-token"));
   await page.goto("/contracts");
   await expect(page.getByRole("heading", { name: "Controlul contractelor instituției" })).toBeVisible();
   await expect(page.getByText("250.000 RON", { exact: true })).toBeVisible();

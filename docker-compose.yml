@@ -1,37 +1,63 @@
 services:
   api:
     build: ./apps/api
+    image: govcontrol-api:local
+    restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
       DEV_AUTH_ENABLED: ${DEV_AUTH_ENABLED:-false}
       DEV_AUTH_TOKEN: ${DEV_AUTH_TOKEN:-}
       DEV_AUTH_EMAIL: ${DEV_AUTH_EMAIL:-}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
+      GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
+      OIDC_TRUSTED_ISSUERS: ${OIDC_TRUSTED_ISSUERS:-}
+      FEDERATED_EMAIL_LINKING_ENABLED: ${FEDERATED_EMAIL_LINKING_ENABLED:-false}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
-      DOCUMENT_STORAGE_PATH: /data/documents
+      DOCUMENT_STORAGE_BACKEND: s3
+      S3_ENDPOINT_URL: http://object-storage:8333
+      S3_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-govcontrol}
+      S3_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-govcontrol-local-storage-change-me}
+      S3_BUCKET: ${OBJECT_STORAGE_BUCKET:-govcontrol-documents}
+      S3_REGION: us-east-1
+      CONTRACTS_API_URL: http://contracts-api:8010/api/v1
     depends_on:
+      api-migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
-    ports:
-      - "8000:8000"
-    volumes:
-      - document_data:/data/documents
+      object-storage:
+        condition: service_healthy
+    expose:
+      - "8000"
     healthcheck:
       test:
-        ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+        ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/ready')"]
       interval: 10s
       timeout: 5s
       retries: 6
       start_period: 10s
+  api-migrate:
+    image: govcontrol-api:local
+    pull_policy: never
+    command: [".venv/bin/alembic", "upgrade", "head"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
+    depends_on:
+      postgres:
+        condition: service_healthy
   web:
     build:
       context: ./apps/web
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api/v1}
+        NEXT_PUBLIC_GATEWAY_URL: ${NEXT_PUBLIC_GATEWAY_URL:-http://localhost:8080}
+    restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${WEB_PORT:-3000}:3000"
     depends_on:
-      api:
+      gateway:
         condition: service_healthy
     healthcheck:
       test:
@@ -42,27 +68,105 @@ services:
       start_period: 10s
   contracts-api:
     build: ./apps/contracts-api
+    image: govcontrol-contracts-api:local
+    restart: unless-stopped
     environment:
       APP_ENV: ${APP_ENV:-development}
       CONTRACTS_DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
       PLATFORM_API_URL: http://api:8000/api/v1
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     depends_on:
       api:
         condition: service_healthy
+      contracts-migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
-    ports:
-      - "8010:8010"
+    expose:
+      - "8010"
     healthcheck:
       test:
-        ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health')"]
+        ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+  contracts-migrate:
+    image: govcontrol-contracts-api:local
+    pull_policy: never
+    command: [".venv/bin/alembic", "upgrade", "head"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      CONTRACTS_DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
+    depends_on:
+      postgres:
+        condition: service_healthy
+  contracts-worker:
+    build: ./apps/contracts-api
+    image: govcontrol-contracts-worker:local
+    restart: unless-stopped
+    command: [".venv/bin/python", "-m", "contracts_app.worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      CONTRACTS_DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
+      REDIS_URL: redis://redis:6379/0
+      EVENT_STREAM_NAME: govcontrol.events
+    depends_on:
+      contracts-migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  gateway:
+    build: ./apps/gateway
+    image: govcontrol-gateway:local
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      AUTH_MODE: ${AUTH_MODE:-local}
+      REDIS_URL: redis://redis:6379/1
+      PLATFORM_API_URL: http://api:8000/api/v1
+      CONTRACTS_API_URL: http://contracts-api:8010/api/v1
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
+      GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
+      SESSION_SIGNING_SECRET: ${SESSION_SIGNING_SECRET:-govcontrol-local-session-signing-change-me}
+      DEV_AUTH_TOKEN: ${DEV_AUTH_TOKEN:-}
+      PORTAL_ORIGINS: ${PORTAL_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      PORTAL_AFTER_LOGIN_URL: ${PORTAL_AFTER_LOGIN_URL:-http://localhost:3000/legal}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      COOKIE_SAMESITE: ${COOKIE_SAMESITE:-lax}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-28800}
+      SESSION_ROTATION_SECONDS: ${SESSION_ROTATION_SECONDS:-1800}
+      RATE_LIMIT_REQUESTS: ${GATEWAY_RATE_LIMIT_REQUESTS:-240}
+      RATE_LIMIT_WINDOW_SECONDS: ${GATEWAY_RATE_LIMIT_WINDOW_SECONDS:-60}
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-http://localhost:8080/auth/callback}
+    depends_on:
+      api:
+        condition: service_healthy
+      contracts-api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    healthcheck:
+      test:
+        ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/ready')"]
       interval: 10s
       timeout: 5s
       retries: 6
       start_period: 10s
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
       - "${REDIS_PORT:-6379}:6379"
@@ -73,22 +177,24 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+  object-storage:
+    image: chrislusf/seaweedfs:4.44
+    restart: unless-stopped
+    command: ["mini", "-dir=/data"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-govcontrol}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-govcontrol-local-minio-change-me}
+      AWS_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY:-govcontrol}
+      AWS_SECRET_ACCESS_KEY: ${OBJECT_STORAGE_SECRET_KEY:-govcontrol-local-storage-change-me}
+      S3_BUCKET: ${OBJECT_STORAGE_BUCKET:-govcontrol-documents}
     ports:
-      - "${MINIO_API_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${OBJECT_STORAGE_PORT:-9000}:8333"
     volumes:
-      - minio_data:/data
+      - object_storage_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:9333/cluster/status"]
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 5s
   postgres:
     image: postgres:16-alpine
     container_name: govcontrol-postgres
@@ -110,6 +216,5 @@ services:
 
 volumes:
   postgres_data:
-  document_data:
   redis_data:
-  minio_data:
+  object_storage_data:
