@@ -1,6 +1,7 @@
-.PHONY: api-check api-dev api-test contracts-check contracts-dev contracts-migrate contracts-seed contracts-test contracts-worker db-migrate db-up db-down db-logs db-seed db-status documents-backfill documents-check documents-clean-e2e documents-dev documents-export-legacy documents-migrate documents-test documents-worker gateway-check gateway-dev gateway-test platform-up stack-check stack-down stack-logs stack-status stack-up stack-up-debug web-build web-check web-dev web-test web-test-e2e web-test-e2e-live
+.PHONY: api-check api-dev api-test contracts-check contracts-dev contracts-migrate contracts-seed contracts-test contracts-worker db-migrate db-up db-down db-logs db-seed db-status documents-backfill documents-check documents-clean-e2e documents-dev documents-export-legacy documents-migrate documents-test documents-worker gateway-check gateway-dev gateway-test notifications-backfill notifications-check notifications-clean-e2e notifications-dev notifications-export-legacy notifications-migrate notifications-scheduler notifications-test notifications-test-integration notifications-worker platform-up stack-check stack-down stack-logs stack-status stack-up stack-up-debug web-build web-check web-dev web-test web-test-e2e web-test-e2e-live
 
 DOCUMENT_EXPORT_DIR ?= /tmp/govcontrol-documents-export
+NOTIFICATION_EXPORT_DIR ?= /tmp/govcontrol-notifications-export
 
 api-dev:
 	cd apps/api && uv run uvicorn app.main:app --reload
@@ -62,6 +63,39 @@ gateway-test:
 gateway-check:
 	cd apps/gateway && uv run ruff check . && uv run mypy gateway_app && uv run pytest
 
+notifications-dev:
+	cd apps/notifications-api && uv run uvicorn notifications_app.main:app --reload --port 8030
+
+notifications-test:
+	cd apps/notifications-api && uv run pytest
+
+notifications-test-integration:
+	cd apps/notifications-api && GOVCONTROL_INTEGRATION=1 uv run pytest
+
+notifications-check:
+	cd apps/notifications-api && uv run ruff check . && uv run mypy notifications_app && uv run pytest && uv run alembic check
+
+notifications-migrate:
+	cd apps/notifications-api && uv run alembic upgrade head
+
+notifications-worker:
+	cd apps/notifications-api && uv run python -m notifications_app.worker
+
+notifications-scheduler:
+	cd apps/notifications-api && uv run python -m notifications_app.scheduler
+
+notifications-export-legacy:
+	mkdir -p "$(NOTIFICATION_EXPORT_DIR)"
+	cd apps/api && uv run python -m app.scripts.export_legacy_notifications --output "$(NOTIFICATION_EXPORT_DIR)/platform.json"
+	cd apps/contracts-api && uv run python -m contracts_app.export_notifications --output "$(NOTIFICATION_EXPORT_DIR)/contracts.json"
+
+notifications-backfill:
+	cd apps/notifications-api && uv run python -m notifications_app.backfill --input "$(NOTIFICATION_EXPORT_DIR)/platform.json" --input "$(NOTIFICATION_EXPORT_DIR)/contracts.json"
+
+notifications-clean-e2e:
+	cd apps/contracts-api && uv run python -m contracts_app.cleanup_e2e
+	cd apps/notifications-api && uv run python -m notifications_app.cleanup_e2e
+
 web-dev:
 	cd apps/web && npm run dev
 
@@ -78,7 +112,7 @@ web-test-e2e:
 	cd apps/web && npm run test:e2e
 
 web-test-e2e-live:
-	set -a; . ./.env; set +a; trap 'cd "$(CURDIR)/apps/documents-api" && uv run python -m documents_app.cleanup_e2e' EXIT; cd apps/documents-api && uv run python -m documents_app.cleanup_e2e; cd ../web && npm run test:e2e -- live-contracts.spec.ts live-documents.spec.ts live-legal.spec.ts --workers=1
+	set -a; . ./.env; set +a; trap 'cd "$(CURDIR)" && make notifications-clean-e2e; cd "$(CURDIR)/apps/documents-api" && uv run python -m documents_app.cleanup_e2e' EXIT; make notifications-clean-e2e; cd apps/documents-api && uv run python -m documents_app.cleanup_e2e; cd ../web && npm run test:e2e -- live-contracts.spec.ts live-documents.spec.ts live-legal.spec.ts live-notifications.spec.ts --workers=1
 
 db-migrate:
 	cd apps/api && uv run alembic upgrade head
@@ -114,7 +148,7 @@ stack-status:
 	docker compose ps -a
 
 stack-logs:
-	docker compose logs -f gateway api contracts-api contracts-worker documents-api documents-worker web
+	docker compose logs -f gateway api api-worker contracts-api contracts-worker documents-api documents-worker notifications-api notifications-worker notifications-scheduler web
 
 stack-check:
-	set -a; . ./.env; set +a; curl -fsS "http://127.0.0.1:$${GATEWAY_PORT:-8080}/ready"; curl -fsS "http://127.0.0.1:$${WEB_PORT:-3000}/" >/dev/null
+	set -e; set -a; . ./.env; set +a; curl -fsS "http://127.0.0.1:$${GATEWAY_PORT:-8080}/ready"; curl -fsS "http://127.0.0.1:$${WEB_PORT:-3000}/" >/dev/null; cd apps/notifications-api && GOVCONTROL_INTEGRATION=1 uv run pytest -q tests/test_service_integration.py

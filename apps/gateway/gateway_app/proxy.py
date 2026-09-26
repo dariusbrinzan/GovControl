@@ -1,3 +1,4 @@
+import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 
@@ -42,7 +43,6 @@ POLICIES = {
             "analytics": frozenset({"GET"}),
             "audit": frozenset({"GET"}),
             "legal": frozenset({"GET", "POST", "PATCH"}),
-            "notifications": frozenset({"GET", "PATCH"}),
             "platform": frozenset({"GET", "POST", "PUT"}),
             "search": frozenset({"GET"}),
         },
@@ -61,12 +61,39 @@ POLICIES = {
     ),
 }
 
+NOTIFICATION_ROUTE_METHODS = {
+    "notifications": frozenset({"GET"}),
+    "notifications/unread-count": frozenset({"GET"}),
+    "notifications/preferences": frozenset({"GET", "PUT"}),
+    "notifications/templates": frozenset({"GET", "POST"}),
+    "notifications/audit": frozenset({"GET"}),
+    "notifications/deliveries": frozenset({"GET"}),
+    "notifications/mark-all-read": frozenset({"POST"}),
+}
+NOTIFICATION_ITEM_ROUTE = re.compile(
+    r"^notifications/[0-9a-fA-F-]{36}/(read|unread|archive|restore)$"
+)
+NOTIFICATION_RETRY_ROUTE = re.compile(
+    r"^notifications/deliveries/[0-9a-fA-F-]{36}/retry$"
+)
+
 
 def _validate_route(service: str, path: str, method: str) -> UpstreamPolicy:
     policy = POLICIES.get(service)
     if policy is None or not path:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Gateway route is not registered.")
     if "\\" in path or "\x00" in path or any(part in {"", ".", ".."} for part in path.split("/")):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Gateway route is not registered.")
+    if service == "notifications":
+        methods = NOTIFICATION_ROUTE_METHODS.get(path)
+        if methods is None:
+            if NOTIFICATION_ITEM_ROUTE.fullmatch(path):
+                methods = frozenset({"PATCH"})
+            elif NOTIFICATION_RETRY_ROUTE.fullmatch(path):
+                methods = frozenset({"POST"})
+        if methods is None or method not in methods:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Gateway route is not registered.")
+    if service == "govcontracts" and path.startswith("contracts/notifications"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Gateway route is not registered.")
     root = path.split("/", 1)[0]
     methods = policy.roots.get(root)

@@ -1,5 +1,5 @@
-import logging
 import asyncio
+import logging
 import smtplib
 from abc import ABC, abstractmethod
 from email.message import EmailMessage
@@ -43,26 +43,27 @@ class SMTPEmailAdapter(DeliveryAdapter):
 
     def _send(self, notification: Notification, recipient_address: str) -> None:
         settings = self.settings
-        if not all(
-            (
-                settings.smtp_host,
-                settings.smtp_username,
-                settings.smtp_password,
-                settings.smtp_from_address,
-            )
-        ):
+        host = settings.smtp_host
+        username = settings.smtp_username
+        password = settings.smtp_password
+        from_address = settings.smtp_from_address
+        if not all((host, username, password, from_address)):
             raise RuntimeError("SMTP_NOT_CONFIGURED")
+        assert host is not None
+        assert username is not None
+        assert password is not None
+        assert from_address is not None
         message = EmailMessage()
         message["Subject"] = notification.title
-        message["From"] = settings.smtp_from_address
+        message["From"] = from_address
         message["To"] = recipient_address
         message.set_content(notification.body)
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=10) as client:
+        with smtplib.SMTP(host, settings.smtp_port, timeout=10) as client:
             if settings.smtp_use_tls:
                 client.starttls()
             client.login(
-                settings.smtp_username,
-                settings.smtp_password.get_secret_value(),
+                username,
+                password.get_secret_value(),
             )
             client.send_message(message)
 

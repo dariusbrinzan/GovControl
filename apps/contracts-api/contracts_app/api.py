@@ -22,7 +22,6 @@ from contracts_app.schemas import (
     MilestoneCreate,
     MilestoneResponse,
     MilestoneStatusChange,
-    NotificationResponse,
     ObligationCreate,
     ObligationResponse,
     ObligationStatusChange,
@@ -107,30 +106,6 @@ async def contract_page(
         limit=limit,
         offset=offset,
     )
-
-
-@router.get("/notifications", response_model=list[NotificationResponse])
-async def notifications(
-    user: ContractReporter,
-    session: Session,
-    limit: int = Query(100, ge=1, le=500),
-    unread_only: bool = False,
-) -> list[NotificationResponse]:
-    items = await ContractService(session).notifications(user.tenant_id, limit, unread_only)
-    return [NotificationResponse.model_validate(item) for item in items]
-
-
-@router.patch("/notifications/{notification_id}/read", response_model=NotificationResponse)
-async def mark_notification_read(
-    notification_id: uuid.UUID, user: ContractManager, session: Session
-) -> NotificationResponse:
-    try:
-        item = await ContractService(session).mark_notification_read(
-            user.tenant_id, notification_id
-        )
-    except ContractNotFoundError as exc:
-        raise map_error(exc) from exc
-    return NotificationResponse.model_validate(item)
 
 
 @router.get("/audit", response_model=AuditEventPage)

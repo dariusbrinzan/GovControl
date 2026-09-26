@@ -1,23 +1,26 @@
 # GovControl implementation status
 
 Status reviewed on 2026-09-26 against the initial project brief, GovContracts extraction,
-gateway/SSO and GovDocuments extraction goals.
+gateway/SSO, GovDocuments and GovNotifications extraction goals.
 
 ## Delivered boundaries
 
 | Boundary | Ownership | Runtime |
 | --- | --- | --- |
 | Platform/GovLegal | tenants, identity, RBAC, organization and GovLegal | FastAPI `:8000` |
-| GovContracts | complete contractual domain, local audit, notifications and outbox | FastAPI `:8010` |
-| GovContracts worker | outbox publication and due-date notification generation | independent worker |
+| GovContracts | complete contractual domain, local audit and outbox | FastAPI `:8010` |
+| GovContracts worker | outbox publication and due-date event generation | independent worker |
 | GovDocuments | metadata, versions, links, lifecycle, audit, outbox and S3 access | FastAPI `:8020` |
 | GovDocuments worker | malware scan transitions and document outbox publication | independent worker |
+| GovNotifications | unified inbox, preferences, templates, schedules, delivery, audit and outbox | FastAPI `:8030` |
+| GovNotifications worker/scheduler | event consumption, pending recovery, retry and retention | independent processes |
 | Portal | common institutional shell and module user interfaces | Next.js `:3000` |
 | Gateway/BFF | OIDC/local login, Redis sessions, CSRF, routing and edge policy | FastAPI `:8080` |
 | Infrastructure | PostgreSQL, Redis Stream and S3-compatible object storage | Docker Compose |
 
-GovContracts owns the `contracts` PostgreSQL schema and GovDocuments owns the `documents` schema;
-both have independent Alembic histories. Neither imports Platform code or queries Platform tables.
+GovContracts owns `contracts`, GovDocuments owns `documents`, and GovNotifications owns
+`notifications`; each has an independent Alembic history. None imports Platform code or queries
+another service's tables.
 GovDocuments validates legal and contractual resource ownership through authenticated internal
 HTTP contracts. Organizational references are validated by GovContracts through Platform's
 internal directory contract.
@@ -71,9 +74,14 @@ backfill migrated all 6 source rows and links; its second run skipped and reveri
 - GovContracts: Ruff, strict mypy and 9 pytest tests.
 - GovDocuments: Ruff, strict mypy and 30 pytest tests, including upload limits, spooling,
   unavailable states, S3 failures, RBAC, tenant/resource isolation and outbox shape.
+- GovNotifications: Ruff, strict mypy, security/unit tests and PostgreSQL integration coverage for
+  filters, pagination, status changes, tenant/user isolation, preferences, deduplication, safe
+  outbox payloads, backfill and the local email sink.
+- The notification backfill reconciled 5 Platform and 3 GovContracts legacy rows; the second run
+  imported zero, skipped/reverified all 8, and left both source tables untouched.
 - Portal: ESLint, strict TypeScript, 4 Vitest tests and optimized Next.js build with the document
   details/version/audit route.
-- Alembic autogeneration checks report no missing operations for all three chains.
+- Alembic autogeneration checks report no missing operations for all four chains.
 - A clean temporary database verified Platform, GovContracts and GovDocuments upgrade, full
   reverse-order downgrade and complete upgrade again.
 - Idempotent GovContracts seed verified stable contract and document counts across repeated runs.
@@ -85,6 +93,8 @@ backfill migrated all 6 source rows and links; its second run skipped and reveri
   after reload. Development-only cleanup removes their DB, S3 and Redis Stream artifacts.
 - A local concurrency smoke run completed 100 Redis-session requests and 40 authenticated
   Platform proxy requests without errors; the gateway reuses one pooled HTTP client.
+- A local GovNotifications burst inserted 40 events and replayed the same 40 in 0.79 seconds,
+  producing exactly 40 notifications. This is an idempotency smoke observation, not a benchmark.
 - Container smoke tests cover readiness, authenticated internal calls, tenant-reference rejection,
   outbox delivery and document upload/download through S3.
 - Four concurrent 24 MiB uploads through the real Gateway completed successfully in 3.75 seconds
@@ -99,7 +109,7 @@ No Kubernetes or Helm manifests are maintained now, per the current product deci
 remain portable through stateless APIs, external persistence, environment configuration, probes
 and graceful shutdown. Add deployment manifests only for a concrete target environment.
 
-A notification service remains a target boundary rather than an empty microservice. Production
-still needs a real institutional OIDC registration, managed ClamAV, TLS/secret management,
+GovNotifications is now an implemented boundary. Production still needs a real institutional OIDC
+registration, managed SMTP (if enabled), managed ClamAV, TLS/secret management,
 encrypted/versioned object storage, backup validation and institution-approved retention/legal-hold
 rules. GovHousing, GovAssets and GovPetitions remain future business modules from the product brief.

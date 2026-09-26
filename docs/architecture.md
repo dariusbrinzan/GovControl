@@ -8,8 +8,11 @@ Next.js portal :3000
    `-- Gateway/BFF :8080 -- server-side Redis session
           |-- Platform/GovLegal API :8000 (identity and RBAC authority)
           |-- GovContracts API      :8010 (independent domain service)
-          `-- GovDocuments API      :8020 (metadata, versions, links and S3)
-               `-- scan/outbox worker --> Redis Stream
+          |-- GovDocuments API      :8020 (metadata, versions, links and S3)
+          `-- GovNotifications API  :8030 (inbox, preferences and delivery)
+
+GovLegal/Contracts/Documents outbox workers --> Redis Stream --> GovNotifications worker
+GovNotifications scheduler --> due schedules, delivery retry and retention
 
 PostgreSQL :5432     Redis :6379     S3-compatible storage :9000
 ```
@@ -24,6 +27,9 @@ PostgreSQL :5432     Redis :6379     S3-compatible storage :9000
   from `apps/api` or query platform/GovLegal tables.
 - `apps/documents-api` owns document metadata, versions, resource links, lifecycle, audit, outbox
   and object storage. It validates business resources only through authenticated internal HTTP.
+- `apps/notifications-api` owns notifications, recipients, preferences, versioned templates,
+  schedules, delivery attempts, processed-event deduplication, audit and notification outbox. It
+  never reads another service's schema.
 - `apps/web` is the shared portal. It communicates only with the gateway and never stores an access
   token or refresh token.
 - Redis is the local message/job infrastructure. SeaweedFS provides the local S3-compatible object
@@ -64,16 +70,19 @@ identifier so an operator can correlate browser, service and audit activity.
 
 ## Events and consistency
 
-Every critical GovContracts or GovDocuments mutation writes business state, local audit and a
+Every critical GovLegal, GovContracts or GovDocuments mutation writes business state, local audit and a
 versioned outbox event in one PostgreSQL transaction. Each service's worker delivers events to
 the `govcontrol.events` Redis Stream and marks them published only after Redis accepts them. This
 provides at-least-once delivery; consumers must use the event UUID for idempotency. Cross-service
 workflows use events and compensating actions rather than distributed database transactions.
+GovNotifications consumes the stream with a consumer group, acknowledges only completed or
+dead-lettered messages, recovers idle pending messages and records the event UUID before ack. Its
+controlled template map copies identifiers and action codes, not producer-supplied business text.
 
 ## Gateway routing and trust
 
 Public routes are namespaced as `/api/v1/platform/*`, `/api/v1/govcontracts/*` and the explicit
-`/api/v1/documents/*` capability. A static map
+`/api/v1/documents/*` and `/api/v1/notifications/*` capabilities. A static map
 restricts both first path segment and HTTP methods. The gateway never accepts an upstream URL,
 removes hop-by-hop and browser identity headers, applies request-size/rate controls and forwards a
 small header allowlist. Its pooled HTTP client propagates only a fresh identity assertion and UUID
@@ -82,10 +91,10 @@ override is maintained separately.
 
 ## Target application map
 
-The current extraction contains Gateway/BFF, Platform/GovLegal, GovContracts, GovDocuments and
-their workers.
+The current extraction contains Gateway/BFF, Platform/GovLegal, GovContracts, GovDocuments,
+GovNotifications and their workers/schedulers.
 Future bounded applications remain explicit architecture targets rather than empty services:
-notifications, reporting/search and additional Gov modules. Identity remains a
+reporting/search and additional Gov modules. Identity remains a
 Platform-owned boundary while the gateway owns protocols and sessions.
 
 ## Kubernetes readiness without Kubernetes manifests

@@ -263,20 +263,6 @@ class ContractDetailResponse(BaseModel):
     payments: list[PaymentResponse]
 
 
-class NotificationResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: uuid.UUID
-    tenant_id: uuid.UUID
-    entity_type: str
-    entity_id: uuid.UUID
-    notification_type: str
-    title: str
-    body: str
-    due_date: date | None
-    read_at: datetime | None
-    created_at: datetime
-
-
 class AuditEventResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: uuid.UUID

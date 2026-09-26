@@ -295,13 +295,28 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-development}
       NOTIFICATIONS_DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
+      PLATFORM_API_URL: http://api:8000/api/v1
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
       GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
+      REDIS_URL: redis://redis:6379/0
+      DEAD_LETTER_STREAM_NAME: ${NOTIFICATIONS_DEAD_LETTER_STREAM_NAME:-govcontrol.notifications.dlq}
+      EMAIL_ENABLED: ${NOTIFICATIONS_EMAIL_ENABLED:-false}
+      EMAIL_ADAPTER: ${NOTIFICATIONS_EMAIL_ADAPTER:-local}
+      SMTP_HOST: ${NOTIFICATIONS_SMTP_HOST:-}
+      SMTP_PORT: ${NOTIFICATIONS_SMTP_PORT:-587}
+      SMTP_USERNAME: ${NOTIFICATIONS_SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${NOTIFICATIONS_SMTP_PASSWORD:-}
+      SMTP_FROM_ADDRESS: ${NOTIFICATIONS_SMTP_FROM_ADDRESS:-}
+      MAX_DELIVERY_ATTEMPTS: ${NOTIFICATIONS_MAX_DELIVERY_ATTEMPTS:-5}
       RETENTION_DAYS: ${NOTIFICATIONS_RETENTION_DAYS:-365}
     depends_on:
       notifications-migrate:
         condition: service_completed_successfully
+      api:
+        condition: service_healthy
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
   gateway:
     build: ./apps/gateway

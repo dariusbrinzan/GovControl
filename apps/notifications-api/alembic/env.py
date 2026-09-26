@@ -1,7 +1,8 @@
 import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy import pool
+from sqlalchemy import pool, text
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
@@ -38,7 +39,11 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def do_run_migrations(connection: object) -> None:
+def do_run_migrations(connection: Connection) -> None:
+    # Alembic creates its version table before the first revision runs, so the
+    # independently owned schema must already exist on a completely empty DB.
+    connection.execute(text("CREATE SCHEMA IF NOT EXISTS notifications"))
+    connection.commit()
     context.configure(
         connection=connection,
         target_metadata=target_metadata,

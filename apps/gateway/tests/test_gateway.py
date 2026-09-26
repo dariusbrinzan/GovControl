@@ -126,6 +126,16 @@ async def test_local_login_proxy_csrf_request_id_and_logout(
             )
             assert notification_mutation.status_code == 200
             assert "x-tenant-id" not in observed_headers[-1]
+            internal_notification = await client.post(
+                "/api/v1/notifications/internal/notifications",
+                headers={"X-CSRF-Token": csrf},
+                json={},
+            )
+            assert internal_notification.status_code == 404
+            legacy_contract_notifications = await client.get(
+                "/api/v1/govcontracts/contracts/notifications"
+            )
+            assert legacy_contract_notifications.status_code == 404
 
             oversized = await client.post(
                 "/api/v1/documents",

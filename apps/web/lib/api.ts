@@ -156,7 +156,7 @@ export type LegalSearchResult = {
 export type LegalSearchResponse = { results: LegalSearchResult[] };
 
 const gatewayBaseUrl =
-  process.env.NEXT_PUBLIC_GATEWAY_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8080";
+  process.env.NEXT_PUBLIC_GATEWAY_URL?.replace(/\/$/, "") ?? "http://localhost:8080";
 const apiBaseUrl = `${gatewayBaseUrl}/api/v1/platform`;
 
 export class ApiError extends Error {

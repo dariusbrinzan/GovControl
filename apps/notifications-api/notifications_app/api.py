@@ -13,6 +13,7 @@ from notifications_app.schemas import (
     BulkMutationResult,
     DeliveryResponse,
     InternalNotificationCreate,
+    InternalScheduleCreate,
     NotificationPage,
     PreferenceInput,
     PreferenceResponse,
@@ -86,10 +87,11 @@ async def mutate_status(
     target: NotificationStatus,
     user: UserContext,
     session: AsyncSession,
+    audit_action: str | None = None,
 ) -> object:
     try:
         return await NotificationService(session).set_status(
-            user.tenant_id, user.id, notification_id, target
+            user.tenant_id, user.id, notification_id, target, audit_action
         )
     except (NotificationNotFoundError, NotificationConflictError) as exc:
         raise map_error(exc) from exc
@@ -112,7 +114,9 @@ async def archive(notification_id: uuid.UUID, user: Manager, session: Session) -
 
 @router.patch("/notifications/{notification_id}/restore")
 async def restore(notification_id: uuid.UUID, user: Manager, session: Session) -> object:
-    return await mutate_status(notification_id, NotificationStatus.UNREAD, user, session)
+    return await mutate_status(
+        notification_id, NotificationStatus.UNREAD, user, session, "RESTORED"
+    )
 
 
 @router.post("/notifications/mark-all-read", response_model=BulkMutationResult)
@@ -153,7 +157,7 @@ async def create_template(
 ) -> TemplateResponse:
     try:
         item = await NotificationService(session).create_template(
-            user.id, **value.model_dump(mode="json")
+            user.tenant_id, user.id, **value.model_dump(mode="json")
         )
     except (TemplateValidationError, IntegrityError) as exc:
         await session.rollback()
@@ -203,5 +207,20 @@ async def internal_create(value: InternalNotificationCreate, session: Session) -
     try:
         item, created = await NotificationService(session).ingest(value)
     except (NotificationNotFoundError, NotificationConflictError, TemplateValidationError) as exc:
+        raise map_error(exc) from exc
+    return {"id": str(item.id), "created": created}
+
+
+@router.post(
+    "/internal/notifications/schedules",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_internal_service)],
+)
+async def internal_schedule(
+    value: InternalScheduleCreate, session: Session
+) -> dict[str, object]:
+    try:
+        item, created = await NotificationService(session).schedule(value)
+    except NotificationConflictError as exc:
         raise map_error(exc) from exc
     return {"id": str(item.id), "created": created}

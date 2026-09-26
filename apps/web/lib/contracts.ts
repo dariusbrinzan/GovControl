@@ -78,7 +78,7 @@ export type ContractAuditPage = {
 };
 
 const contractsApiBase =
-  `${process.env.NEXT_PUBLIC_GATEWAY_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8080"}/api/v1/govcontracts`;
+  `${process.env.NEXT_PUBLIC_GATEWAY_URL?.replace(/\/$/, "") ?? "http://localhost:8080"}/api/v1/govcontracts`;
 
 async function request<T>(path: string, csrfToken: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${contractsApiBase}${path}`, {

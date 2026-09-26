@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     event_stream_name: str = "govcontrol.events"
     outbox_batch_size: int = 100
     outbox_poll_interval_seconds: float = 2.0
+    reminder_scan_interval_seconds: float = 60.0
 
     @property
     def cors_origins(self) -> list[str]:

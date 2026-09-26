@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import signal
+import time
 from datetime import UTC, datetime
 
 from redis.asyncio import Redis
@@ -84,6 +85,10 @@ async def process_message(
     fields: dict[str, str],
 ) -> bool:
     retry_key = f"govnotifications:retry:{message_id}"
+    retry_after_key = f"{retry_key}:after"
+    retry_after = await redis.get(retry_after_key)
+    if retry_after is not None and float(retry_after) > time.time():
+        return False
     try:
         raw = fields.get("event")
         if raw is None:
@@ -102,6 +107,7 @@ async def process_message(
             await NotificationService(session).ingest(value, message_id)
         await redis.xack(settings.event_stream_name, settings.consumer_group, message_id)
         await redis.delete(retry_key)
+        await redis.delete(retry_after_key)
         return True
     except Exception as exc:
         attempts = int(await redis.incr(retry_key))
@@ -117,6 +123,10 @@ async def process_message(
                 redis, settings, message_id, fields, type(exc).__name__, attempts
             )
             await redis.delete(retry_key)
+            await redis.delete(retry_after_key)
+        else:
+            delay = settings.retry_base_seconds * 2 ** max(0, attempts - 1)
+            await redis.set(retry_after_key, str(time.time() + delay), ex=7 * 24 * 60 * 60)
         return False
 
 

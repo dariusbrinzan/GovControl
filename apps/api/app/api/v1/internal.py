@@ -13,8 +13,8 @@ from app.core.security import (
     SettingsDependency,
     build_user_context,
 )
-from app.repositories.legal import LegalRepository
 from app.models.user import User
+from app.repositories.legal import LegalRepository
 from app.services.identity import FederatedIdentityUnavailableError, IdentityService
 from app.services.platform import PlatformService
 

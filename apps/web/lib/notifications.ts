@@ -1,7 +1,7 @@
 import { ApiError } from "./api";
 
 const gatewayBaseUrl =
-  process.env.NEXT_PUBLIC_GATEWAY_URL?.replace(/\/$/, "") ?? "http://127.0.0.1:8080";
+  process.env.NEXT_PUBLIC_GATEWAY_URL?.replace(/\/$/, "") ?? "http://localhost:8080";
 const baseUrl = `${gatewayBaseUrl}/api/v1/notifications`;
 
 export type NotificationStatus = "UNREAD" | "READ" | "ARCHIVED";

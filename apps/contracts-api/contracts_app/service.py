@@ -11,7 +11,6 @@ from contracts_app.models import (
     ContractAmendment,
     ContractAuditEvent,
     ContractMilestone,
-    ContractNotification,
     ContractObligation,
     ContractParty,
     ContractPartyLink,
@@ -685,40 +684,6 @@ class ContractService:
                 ),
             ]
         )
-
-    async def notifications(
-        self, tenant_id: uuid.UUID, limit: int, unread_only: bool
-    ) -> list[ContractNotification]:
-        statement = select(ContractNotification).where(
-            ContractNotification.tenant_id == tenant_id
-        )
-        if unread_only:
-            statement = statement.where(ContractNotification.read_at.is_(None))
-        return list(
-            await self.session.scalars(
-                statement.order_by(
-                    ContractNotification.read_at.asc().nulls_first(),
-                    ContractNotification.created_at.desc(),
-                ).limit(limit)
-            )
-        )
-
-    async def mark_notification_read(
-        self, tenant_id: uuid.UUID, notification_id: uuid.UUID
-    ) -> ContractNotification:
-        item = await self.session.scalar(
-            select(ContractNotification).where(
-                ContractNotification.id == notification_id,
-                ContractNotification.tenant_id == tenant_id,
-            )
-        )
-        if item is None:
-            raise ContractNotFoundError
-        if item.read_at is None:
-            item.read_at = datetime.now(UTC)
-            await self.session.commit()
-            await self.session.refresh(item)
-        return item
 
     async def audit_events(
         self, tenant_id: uuid.UUID, limit: int, offset: int

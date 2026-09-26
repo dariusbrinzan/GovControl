@@ -6,6 +6,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from notifications_app.config import Settings, get_settings
 from notifications_app.models import (
     Channel,
     DeliveryAttempt,
@@ -14,14 +15,19 @@ from notifications_app.models import (
     NotificationAuditEvent,
     NotificationPreference,
     NotificationRecipient,
+    NotificationSchedule,
     NotificationStatus,
     NotificationTemplate,
     OutboxEvent,
     ProcessedEvent,
 )
-from notifications_app.config import Settings, get_settings
 from notifications_app.observability import current_request_id
-from notifications_app.schemas import InternalNotificationCreate, NotificationItem, PreferenceInput
+from notifications_app.schemas import (
+    InternalNotificationCreate,
+    InternalScheduleCreate,
+    NotificationItem,
+    PreferenceInput,
+)
 from notifications_app.templates import TemplateValidationError, render_template, validate_template
 
 
@@ -106,6 +112,7 @@ class NotificationService:
         user_id: uuid.UUID,
         notification_id: uuid.UUID,
         status: NotificationStatus,
+        audit_action: str | None = None,
     ) -> NotificationItem:
         row = (
             await self.session.execute(
@@ -130,7 +137,7 @@ class NotificationService:
         recipient.status = status
         recipient.read_at = now if status == NotificationStatus.READ else None
         recipient.archived_at = now if status == NotificationStatus.ARCHIVED else None
-        action = {
+        action = audit_action or {
             NotificationStatus.READ: "READ",
             NotificationStatus.UNREAD: "UNREAD",
             NotificationStatus.ARCHIVED: "ARCHIVED",
@@ -222,6 +229,7 @@ class NotificationService:
 
     async def create_template(
         self,
+        tenant_id: uuid.UUID,
         actor_id: uuid.UUID,
         *,
         key: str,
@@ -257,6 +265,13 @@ class NotificationService:
         )
         self.session.add(item)
         await self.session.flush()
+        self._audit(
+            tenant_id,
+            actor_id,
+            None,
+            "TEMPLATE_VERSION_CREATED",
+            {"template_key": key, "version": item.version},
+        )
         await self.session.commit()
         await self.session.refresh(item)
         return item
@@ -301,7 +316,8 @@ class NotificationService:
             body=body,
             resource_type=value.resource_type,
             resource_id=value.resource_id,
-            resource_url=value.resource_url or self._resource_url(value.resource_type, value.resource_id),
+            resource_url=value.resource_url
+            or self._resource_url(value.resource_type, value.resource_id),
             template_key=template.key,
             template_version=template.version,
             source_event_id=value.event_id,
@@ -348,7 +364,12 @@ class NotificationService:
                 NotificationPreference.channel == Channel.EMAIL,
             )
         )
-        if self.settings.email_enabled and email_preference is not None and email_preference.enabled:
+        email_enabled = (
+            self.settings.email_enabled
+            and email_preference is not None
+            and email_preference.enabled
+        )
+        if email_enabled:
             self.session.add(
                 DeliveryAttempt(
                     notification_id=notification.id,
@@ -393,6 +414,39 @@ class NotificationService:
         await self.session.commit()
         await self.session.refresh(notification)
         return notification, True
+
+    async def schedule(
+        self, value: InternalScheduleCreate
+    ) -> tuple[NotificationSchedule, bool]:
+        statement = (
+            insert(NotificationSchedule)
+            .values(**value.model_dump())
+            .on_conflict_do_nothing(constraint="uq_schedule_dedup")
+            .returning(NotificationSchedule)
+        )
+        scheduled = (await self.session.scalars(statement)).one_or_none()
+        created = scheduled is not None
+        if scheduled is None:
+            scheduled = await self.session.scalar(
+                select(NotificationSchedule).where(
+                    NotificationSchedule.tenant_id == value.tenant_id,
+                    NotificationSchedule.deduplication_key == value.deduplication_key,
+                )
+            )
+        if scheduled is None:
+            raise NotificationConflictError("Schedule could not be created.")
+        self._audit(
+            value.tenant_id,
+            None,
+            None,
+            "SCHEDULED" if created else "SCHEDULE_DEDUPLICATED",
+            {
+                "schedule_id": str(scheduled.id),
+                "template_key": value.template_key,
+            },
+        )
+        await self.session.commit()
+        return scheduled, created
 
     async def audit_events(self, tenant_id: uuid.UUID, limit: int) -> list[NotificationAuditEvent]:
         return list(

@@ -2,7 +2,7 @@
 GovControl – Operational Risk Platform for Public Administration
 
 The repository contains independently runnable application boundaries: the API gateway/BFF,
-Platform/GovLegal, GovContracts, GovDocuments and the shared Next.js portal. See
+Platform/GovLegal, GovContracts, GovDocuments, GovNotifications and the shared Next.js portal. See
 [`docs/architecture.md`](docs/architecture.md) for ownership and communication rules.
 The reproducible local deployment procedure is documented in
 [`docs/local-deployment.md`](docs/local-deployment.md).
@@ -92,6 +92,7 @@ Apply the committed Alembic migrations to the local PostgreSQL container with:
 make db-migrate
 make contracts-migrate
 make documents-migrate
+make notifications-migrate
 ```
 
 Schema changes must be made through a new Alembic migration; do not modify the
@@ -152,8 +153,8 @@ are filtered by the tenant established by the backend.
 - `GET, POST /api/v1/legal/enforcements`
 - `GET, POST /api/v1/legal/penalties/rules`; `GET /api/v1/legal/penalties/rules/{id}/exposure`
 - GovLegal document views call the independent `/api/v1/documents` Gateway capability.
-- `GET /api/v1/notifications`; `PATCH /api/v1/notifications/{id}/read`
-- `POST /api/v1/notifications/dispatch/deadline-reminders`
+- GovLegal publishes deadline, enforcement and penalty events; the unified notification inbox is
+  served by GovNotifications through `/api/v1/notifications/*`.
 - `GET /api/v1/search/legal` and `GET /api/v1/audit/events`
 - `GET /api/v1/legal/analytics/dashboard` for tenant-scoped KPI and chart aggregates
 - `GET /api/v1/legal/analytics/filters` for tenant-scoped reporting filter options
@@ -182,7 +183,6 @@ PostgreSQL schema and its own Alembic history. `contracts.manage` authorizes ope
 - `PATCH /api/v1/contracts/{id}/obligations/{item_id}/status`
 - `GET, POST /api/v1/contracts/{id}/payments`
 - `PATCH /api/v1/contracts/{id}/payments/{item_id}/status`
-- `GET /api/v1/contracts/notifications`; `PATCH /api/v1/contracts/notifications/{id}/read`
 - `GET /api/v1/contracts/audit` with tenant-scoped pagination
 
 Contract documents continue through the shared `/api/v1/documents` capability. The document API
@@ -208,12 +208,32 @@ The upload worker supports quarantine/ClamAV scanning and publishes a transactio
 shared Redis Stream. See [`docs/govdocuments.md`](docs/govdocuments.md) for the full HTTP/event
 contract, retention, recovery, migration rollback and local performance observations.
 
+## GovNotifications
+
+GovNotifications is independently runnable on internal port `8030`, owns PostgreSQL schema
+`notifications`, and consumes controlled GovLegal, GovContracts and GovDocuments events. It owns
+the unified inbox, recipients, preferences, templates, schedules, delivery attempts, deduplication,
+audit and its own transactional outbox. Browser access is only through Gateway:
+
+- `GET /api/v1/notifications` with status/category/severity/date filters and pagination;
+- `GET /api/v1/notifications/unread-count`;
+- `PATCH /api/v1/notifications/{id}/read|unread|archive|restore`;
+- `POST /api/v1/notifications/mark-all-read`;
+- `GET, PUT /api/v1/notifications/preferences`;
+- authorized template, audit and delivery administration routes.
+
+Run `make notifications-check`, `make notifications-test-integration`,
+`make notifications-worker` or `make notifications-scheduler` for the isolated service. Migration,
+event, delivery, retention, recovery and rollback details are in
+[`docs/govnotifications.md`](docs/govnotifications.md).
+
 ## Containers
 
 `docker compose up --build` starts PostgreSQL, Redis, S3-compatible object storage, all APIs, the
-gateway and the Next.js interface. One-shot migration containers apply the three independent
+gateway and the Next.js interface. One-shot migration containers apply the four independent
 Alembic chains before the corresponding APIs and workers are allowed to start.
-Use `make db-migrate`, `make contracts-migrate` and `make documents-migrate` when running directly.
+Use `make db-migrate`, `make contracts-migrate`, `make documents-migrate` and
+`make notifications-migrate` when running directly.
 For infrastructure-only local development, use `make platform-up`.
 The public application ports default to `8080` for the gateway and `3000` for the portal. Platform
 and GovContracts have no host ports in the normal Compose topology. Use `make stack-up-debug` to
@@ -228,6 +248,8 @@ health/readiness probes and external state.
 The portal calls only `http://127.0.0.1:8080`. Platform requests use the
 `/api/v1/platform/*` prefix, GovContracts uses `/api/v1/govcontracts/*`, and GovDocuments uses the
 explicit `/api/v1/documents/*` routes.
+GovNotifications uses the explicit `/api/v1/notifications/*` allowlist; internal ingestion and
+scheduling endpoints are not browser-routable.
 The gateway uses an explicit route allowlist, pooled upstream connections, payload limits, rate
 limiting, request correlation and consistent dependency errors.
 

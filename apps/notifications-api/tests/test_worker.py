@@ -1,8 +1,9 @@
 import fakeredis.aioredis
 import pytest
+from redis.exceptions import ConnectionError
 
 from notifications_app.config import Settings
-from notifications_app.worker import ensure_group, process_message
+from notifications_app.worker import consume_new, ensure_group, process_message
 
 DATABASE_URL = "postgresql+asyncpg://user:password@localhost/database"
 
@@ -32,6 +33,8 @@ async def test_invalid_event_reaches_dead_letter_after_limit() -> None:
     )
     fields = messages[0][1][0][1]
     assert await process_message(client, settings, message_id, fields) is False
+    assert await client.get(f"govnotifications:retry:{message_id}:after") is not None
+    await client.delete(f"govnotifications:retry:{message_id}:after")
     assert await process_message(client, settings, message_id, fields) is False
     dead = await client.xrange(settings.dead_letter_stream_name)
     assert len(dead) == 1
@@ -39,3 +42,14 @@ async def test_invalid_event_reaches_dead_letter_after_limit() -> None:
     pending = await client.xpending(settings.event_stream_name, settings.consumer_group)
     assert pending["pending"] == 0
     await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_redis_outage_is_reported_to_worker_loop() -> None:
+    class UnavailableRedis:
+        async def xreadgroup(self, *args: object, **kwargs: object) -> object:
+            raise ConnectionError("redis unavailable")
+
+    settings = Settings(notifications_database_url=DATABASE_URL)
+    with pytest.raises(ConnectionError, match="unavailable"):
+        await consume_new(UnavailableRedis(), settings)  # type: ignore[arg-type]

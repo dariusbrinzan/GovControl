@@ -80,6 +80,40 @@ jobs:
       - run: uv run alembic upgrade head
       - run: uv run alembic check
       - run: docker build .
+  notifications-api:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: govcontrol_notifications_ci
+          POSTGRES_USER: govcontrol
+          POSTGRES_PASSWORD: govcontrol-notifications-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U govcontrol -d govcontrol_notifications_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NOTIFICATIONS_DATABASE_URL: postgresql+asyncpg://govcontrol:govcontrol-notifications-ci@127.0.0.1:5432/govcontrol_notifications_ci
+      GOVCONTROL_INTEGRATION: "1"
+    defaults:
+      run:
+        working-directory: apps/notifications-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run mypy notifications_app
+      - run: uv run alembic upgrade head
+      - run: uv run pytest
+      - run: uv run alembic check
+      - run: docker build .
   web:
     runs-on: ubuntu-latest
     defaults:
@@ -98,4 +132,4 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e -- navigation.spec.ts
+      - run: npm run test:e2e -- navigation.spec.ts notifications.spec.ts

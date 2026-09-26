@@ -133,5 +133,16 @@ class InternalNotificationCreate(BaseModel):
     deduplication_key: str = Field(min_length=1, max_length=255)
 
 
+class InternalScheduleCreate(BaseModel):
+    tenant_id: uuid.UUID
+    recipient_user_id: uuid.UUID
+    template_key: str = Field(min_length=1, max_length=150)
+    variables: dict[str, str] = Field(default_factory=dict)
+    resource_type: str | None = Field(None, max_length=100)
+    resource_id: uuid.UUID | None = None
+    scheduled_for: datetime
+    deduplication_key: str = Field(min_length=1, max_length=255)
+
+
 class RetryResult(BaseModel):
     queued: bool
