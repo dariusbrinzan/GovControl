@@ -318,6 +318,93 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+  insights-api:
+    build: ./apps/insights-api
+    image: govcontrol-insights-api:local
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      INSIGHTS_DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
+      PLATFORM_API_URL: http://api:8000/api/v1
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
+      GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
+      REDIS_URL: redis://redis:6379/0
+      EVENT_STREAM_NAME: ${EVENT_STREAM_NAME:-govcontrol.events}
+      DEAD_LETTER_STREAM_NAME: ${INSIGHTS_DEAD_LETTER_STREAM_NAME:-govcontrol.insights.dlq}
+      CONSUMER_GROUP: ${INSIGHTS_CONSUMER_GROUP:-govinsights-v1}
+      EXPORT_STORAGE_BACKEND: s3
+      S3_ENDPOINT_URL: http://object-storage:8333
+      S3_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-govcontrol}
+      S3_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-govcontrol-local-storage-change-me}
+      EXPORT_BUCKET: ${INSIGHTS_EXPORT_BUCKET:-govcontrol-insights}
+      S3_REGION: us-east-1
+      EXPORT_MAX_ROWS: ${INSIGHTS_EXPORT_MAX_ROWS:-100000}
+      EXPORT_RETENTION_HOURS: ${INSIGHTS_EXPORT_RETENTION_HOURS:-24}
+    depends_on:
+      api:
+        condition: service_healthy
+      insights-migrate:
+        condition: service_completed_successfully
+      object-storage:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "8040"
+    healthcheck:
+      test:
+        ["CMD", ".venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8040/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+      start_period: 15s
+  insights-migrate:
+    image: govcontrol-insights-api:local
+    pull_policy: never
+    command: [".venv/bin/alembic", "upgrade", "head"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      INSIGHTS_DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
+      GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
+    depends_on:
+      postgres:
+        condition: service_healthy
+  insights-worker:
+    image: govcontrol-insights-api:local
+    pull_policy: never
+    restart: unless-stopped
+    command: [".venv/bin/python", "-m", "insights_app.worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      INSIGHTS_DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
+      PLATFORM_API_URL: http://api:8000/api/v1
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
+      GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
+      REDIS_URL: redis://redis:6379/0
+      EVENT_STREAM_NAME: ${EVENT_STREAM_NAME:-govcontrol.events}
+      DEAD_LETTER_STREAM_NAME: ${INSIGHTS_DEAD_LETTER_STREAM_NAME:-govcontrol.insights.dlq}
+      CONSUMER_GROUP: ${INSIGHTS_CONSUMER_GROUP:-govinsights-v1}
+      CONSUMER_NAME: ${INSIGHTS_CONSUMER_NAME:-insights-worker-1}
+      EXPORT_STORAGE_BACKEND: s3
+      S3_ENDPOINT_URL: http://object-storage:8333
+      S3_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY:-govcontrol}
+      S3_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY:-govcontrol-local-storage-change-me}
+      EXPORT_BUCKET: ${INSIGHTS_EXPORT_BUCKET:-govcontrol-insights}
+      S3_REGION: us-east-1
+      EXPORT_MAX_ROWS: ${INSIGHTS_EXPORT_MAX_ROWS:-100000}
+      EXPORT_RETENTION_HOURS: ${INSIGHTS_EXPORT_RETENTION_HOURS:-24}
+    depends_on:
+      insights-migrate:
+        condition: service_completed_successfully
+      object-storage:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
   gateway:
     build: ./apps/gateway
     image: govcontrol-gateway:local
@@ -330,6 +417,7 @@ services:
       CONTRACTS_API_URL: http://contracts-api:8010/api/v1
       DOCUMENTS_API_URL: http://documents-api:8020/api/v1
       NOTIFICATIONS_API_URL: http://notifications-api:8030/api/v1
+      INSIGHTS_API_URL: http://insights-api:8040/api/v1
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
       GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
       SESSION_SIGNING_SECRET: ${SESSION_SIGNING_SECRET:-govcontrol-local-session-signing-change-me}
@@ -350,6 +438,11 @@ services:
       NOTIFICATION_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_NOTIFICATION_REQUEST_TIMEOUT_SECONDS:-10}
       NOTIFICATION_READ_RATE_LIMIT_REQUESTS: ${GATEWAY_NOTIFICATION_READ_RATE_LIMIT_REQUESTS:-180}
       NOTIFICATION_MUTATION_RATE_LIMIT_REQUESTS: ${GATEWAY_NOTIFICATION_MUTATION_RATE_LIMIT_REQUESTS:-60}
+      INSIGHTS_REQUEST_TIMEOUT_SECONDS: ${GATEWAY_INSIGHTS_REQUEST_TIMEOUT_SECONDS:-20}
+      MAX_INSIGHTS_PAYLOAD_BYTES: ${GATEWAY_MAX_INSIGHTS_PAYLOAD_BYTES:-262144}
+      INSIGHTS_DASHBOARD_RATE_LIMIT_REQUESTS: ${GATEWAY_INSIGHTS_DASHBOARD_RATE_LIMIT_REQUESTS:-120}
+      INSIGHTS_SEARCH_RATE_LIMIT_REQUESTS: ${GATEWAY_INSIGHTS_SEARCH_RATE_LIMIT_REQUESTS:-120}
+      INSIGHTS_EXPORT_RATE_LIMIT_REQUESTS: ${GATEWAY_INSIGHTS_EXPORT_RATE_LIMIT_REQUESTS:-20}
       OIDC_ISSUER: ${OIDC_ISSUER:-}
       OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
@@ -362,6 +455,8 @@ services:
       documents-api:
         condition: service_healthy
       notifications-api:
+        condition: service_healthy
+      insights-api:
         condition: service_healthy
       redis:
         condition: service_healthy

@@ -59,6 +59,10 @@ POLICIES = {
         base_url_setting="notifications_api_url",
         roots={"notifications": frozenset({"GET", "POST", "PUT", "PATCH"})},
     ),
+    "insights": UpstreamPolicy(
+        base_url_setting="insights_api_url",
+        roots={"insights": frozenset({"GET", "POST", "PUT", "DELETE"})},
+    ),
 }
 
 NOTIFICATION_ROUTE_METHODS = {
@@ -73,9 +77,23 @@ NOTIFICATION_ROUTE_METHODS = {
 NOTIFICATION_ITEM_ROUTE = re.compile(
     r"^notifications/[0-9a-fA-F-]{36}/(read|unread|archive|restore)$"
 )
-NOTIFICATION_RETRY_ROUTE = re.compile(
-    r"^notifications/deliveries/[0-9a-fA-F-]{36}/retry$"
+NOTIFICATION_RETRY_ROUTE = re.compile(r"^notifications/deliveries/[0-9a-fA-F-]{36}/retry$")
+INSIGHTS_ROUTE_METHODS = {
+    "insights/dashboards/executive": frozenset({"GET"}),
+    "insights/search": frozenset({"GET"}),
+    "insights/metadata": frozenset({"GET"}),
+    "insights/reports": frozenset({"GET", "POST"}),
+    "insights/runs": frozenset({"GET"}),
+    "insights/exports": frozenset({"GET"}),
+    "insights/projections/status": frozenset({"GET"}),
+    "insights/projections/rebuild": frozenset({"POST"}),
+}
+INSIGHTS_DASHBOARD_ROUTE = re.compile(
+    r"^insights/dashboards/(legal|contracts|documents|notifications|platform)$"
 )
+INSIGHTS_REPORT_ITEM_ROUTE = re.compile(r"^insights/reports/[0-9a-fA-F-]{36}$")
+INSIGHTS_REPORT_RUN_ROUTE = re.compile(r"^insights/reports/[0-9a-fA-F-]{36}/runs$")
+INSIGHTS_EXPORT_DOWNLOAD_ROUTE = re.compile(r"^insights/exports/[0-9a-fA-F-]{36}/download$")
 
 
 def _validate_route(service: str, path: str, method: str) -> UpstreamPolicy:
@@ -91,6 +109,18 @@ def _validate_route(service: str, path: str, method: str) -> UpstreamPolicy:
                 methods = frozenset({"PATCH"})
             elif NOTIFICATION_RETRY_ROUTE.fullmatch(path):
                 methods = frozenset({"POST"})
+        if methods is None or method not in methods:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Gateway route is not registered.")
+    if service == "insights":
+        methods = INSIGHTS_ROUTE_METHODS.get(path)
+        if methods is None and INSIGHTS_DASHBOARD_ROUTE.fullmatch(path):
+            methods = frozenset({"GET"})
+        elif methods is None and INSIGHTS_REPORT_ITEM_ROUTE.fullmatch(path):
+            methods = frozenset({"PUT", "DELETE"})
+        elif methods is None and INSIGHTS_REPORT_RUN_ROUTE.fullmatch(path):
+            methods = frozenset({"POST"})
+        elif methods is None and INSIGHTS_EXPORT_DOWNLOAD_ROUTE.fullmatch(path):
+            methods = frozenset({"GET"})
         if methods is None or method not in methods:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Gateway route is not registered.")
     if service == "govcontracts" and path.startswith("contracts/notifications"):
@@ -135,9 +165,16 @@ async def notifications_root(request: Request) -> Response:
     include_in_schema=False,
 )
 async def notifications_proxy(notification_path: str, request: Request) -> Response:
-    return await proxy_request(
-        "notifications", f"notifications/{notification_path}", request
-    )
+    return await proxy_request("notifications", f"notifications/{notification_path}", request)
+
+
+@router.api_route(
+    "/insights/{insights_path:path}",
+    methods=["GET", "POST", "PUT", "DELETE"],
+    include_in_schema=False,
+)
+async def insights_proxy(insights_path: str, request: Request) -> Response:
+    return await proxy_request("insights", f"insights/{insights_path}", request)
 
 
 @router.api_route(
@@ -160,6 +197,8 @@ async def proxy_request(service: str, path: str, request: Request) -> Response:
         body_limit = settings.max_document_upload_bytes
     elif service == "notifications":
         body_limit = settings.max_notification_payload_bytes
+    elif service == "insights":
+        body_limit = settings.max_insights_payload_bytes
     else:
         body_limit = settings.max_request_body_bytes
 
@@ -196,6 +235,11 @@ async def proxy_request(service: str, path: str, request: Request) -> Response:
         elif service == "notifications":
             upstream_request.extensions["timeout"] = httpx.Timeout(
                 settings.notification_request_timeout_seconds,
+                connect=settings.connect_timeout_seconds,
+            ).as_dict()
+        elif service == "insights":
+            upstream_request.extensions["timeout"] = httpx.Timeout(
+                settings.insights_request_timeout_seconds,
                 connect=settings.connect_timeout_seconds,
             ).as_dict()
         upstream = await request.app.state.http_client.send(upstream_request, stream=True)

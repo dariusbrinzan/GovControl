@@ -48,7 +48,5 @@ async def test_expired_session_is_rejected_and_rotation_changes_csrf() -> None:
     assert await store.resolve(store.encode_cookie(record.id)) is None
 
     expired = rotated.model_copy(update={"expires_at": datetime.now(UTC) - timedelta(seconds=1)})
-    await client.set(
-        f"{store.key_prefix}{expired.id}", expired.model_dump_json(), ex=300
-    )
+    await client.set(f"{store.key_prefix}{expired.id}", expired.model_dump_json(), ex=300)
     assert await store.resolve(store.encode_cookie(expired.id)) is None

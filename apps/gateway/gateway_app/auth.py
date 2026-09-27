@@ -55,9 +55,7 @@ async def oidc_login(request: Request) -> RedirectResponse:
     try:
         location = await request.app.state.oidc_client.begin()
     except OIDCError as exc:
-        await record_auth_event(
-            request.app.state.redis, "login.oidc.started", outcome="failure"
-        )
+        await record_auth_event(request.app.state.redis, "login.oidc.started", outcome="failure")
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     await record_auth_event(request.app.state.redis, "login.oidc.started", outcome="success")
     return RedirectResponse(location, status_code=status.HTTP_302_FOUND)
@@ -75,9 +73,7 @@ async def oidc_callback(
     try:
         identity = await request.app.state.oidc_client.complete(state=state, code=code)
     except OIDCError as exc:
-        await record_auth_event(
-            request.app.state.redis, "login.oidc.completed", outcome="failure"
-        )
+        await record_auth_event(request.app.state.redis, "login.oidc.completed", outcome="failure")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
     if settings.internal_service_token is None:
         raise HTTPException(
@@ -99,8 +95,10 @@ async def oidc_callback(
         ) from exc
     if upstream.status_code != status.HTTP_200_OK:
         await record_auth_event(
-            request.app.state.redis, "login.oidc.completed", outcome="failure",
-            detail="identity_not_provisioned"
+            request.app.state.redis,
+            "login.oidc.completed",
+            outcome="failure",
+            detail="identity_not_provisioned",
         )
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Identity is not provisioned.")
     user = UserContext.model_validate(upstream.json())

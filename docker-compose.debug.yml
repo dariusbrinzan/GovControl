@@ -11,3 +11,6 @@ services:
   notifications-api:
     ports:
       - "127.0.0.1:${NOTIFICATIONS_API_PORT:-8030}:8030"
+  insights-api:
+    ports:
+      - "127.0.0.1:${INSIGHTS_API_PORT:-8040}:8040"

@@ -46,9 +46,7 @@ async def test_local_login_proxy_csrf_request_id_and_logout(
         await app.state.http_client.aclose()
         app.state.redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
         app.state.http_client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
-        app.state.oidc_client = OIDCClient(
-            app.state.http_client, app.state.redis, get_settings()
-        )
+        app.state.oidc_client = OIDCClient(app.state.http_client, app.state.redis, get_settings())
         async with httpx.AsyncClient(
             transport=httpx.ASGITransport(app=app), base_url="http://gateway.test"
         ) as client:
@@ -65,9 +63,7 @@ async def test_local_login_proxy_csrf_request_id_and_logout(
                 },
             )
             assert preflight.status_code == 200
-            assert "idempotency-key" in preflight.headers[
-                "access-control-allow-headers"
-            ].lower()
+            assert "idempotency-key" in preflight.headers["access-control-allow-headers"].lower()
             foreign_origin = await client.post(
                 "/auth/local/login", headers={"Origin": "https://attacker.example"}
             )
@@ -137,6 +133,14 @@ async def test_local_login_proxy_csrf_request_id_and_logout(
             )
             assert legacy_contract_notifications.status_code == 404
 
+            insights = await client.get("/api/v1/insights/dashboards/executive")
+            assert insights.status_code == 200
+            assert observed_headers[-1]["authorization"].startswith("Bearer eyJ")
+            blocked_internal_insights = await client.get("/api/v1/insights/internal/backfill")
+            assert blocked_internal_insights.status_code == 404
+            report_without_csrf = await client.post("/api/v1/insights/reports", json={"name": "x"})
+            assert report_without_csrf.status_code == 403
+
             oversized = await client.post(
                 "/api/v1/documents",
                 headers={"X-CSRF-Token": csrf},
@@ -190,9 +194,7 @@ async def test_authenticated_proxy_reports_upstream_unavailable(
             assert (await client.post("/auth/local/login")).status_code == 200
             response = await client.get("/api/v1/platform/legal/cases")
             assert response.status_code == 503
-            assert response.json() == {
-                "detail": "The requested GovControl service is unavailable."
-            }
+            assert response.json() == {"detail": "The requested GovControl service is unavailable."}
     get_settings.cache_clear()
 
 

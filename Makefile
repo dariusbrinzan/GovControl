@@ -1,4 +1,4 @@
-.PHONY: api-check api-dev api-test contracts-check contracts-dev contracts-migrate contracts-seed contracts-test contracts-worker db-migrate db-up db-down db-logs db-seed db-status documents-backfill documents-check documents-clean-e2e documents-dev documents-export-legacy documents-migrate documents-test documents-worker gateway-check gateway-dev gateway-test notifications-backfill notifications-check notifications-clean-e2e notifications-dev notifications-export-legacy notifications-migrate notifications-scheduler notifications-test notifications-test-integration notifications-worker platform-up stack-check stack-down stack-logs stack-status stack-up stack-up-debug web-build web-check web-dev web-test web-test-e2e web-test-e2e-live
+.PHONY: api-check api-dev api-test contracts-check contracts-dev contracts-migrate contracts-seed contracts-test contracts-worker db-migrate db-up db-down db-logs db-seed db-status documents-backfill documents-check documents-clean-e2e documents-dev documents-export-legacy documents-migrate documents-test documents-worker gateway-check gateway-dev gateway-test insights-check insights-dev insights-migrate insights-test insights-worker notifications-backfill notifications-check notifications-clean-e2e notifications-dev notifications-export-legacy notifications-migrate notifications-scheduler notifications-test notifications-test-integration notifications-worker platform-up stack-check stack-down stack-logs stack-status stack-up stack-up-debug web-build web-check web-dev web-test web-test-e2e web-test-e2e-live
 
 DOCUMENT_EXPORT_DIR ?= /tmp/govcontrol-documents-export
 NOTIFICATION_EXPORT_DIR ?= /tmp/govcontrol-notifications-export
@@ -96,6 +96,21 @@ notifications-clean-e2e:
 	cd apps/contracts-api && uv run python -m contracts_app.cleanup_e2e
 	cd apps/notifications-api && uv run python -m notifications_app.cleanup_e2e
 
+insights-dev:
+	cd apps/insights-api && uv run uvicorn insights_app.main:app --reload --port 8040
+
+insights-test:
+	cd apps/insights-api && uv run pytest
+
+insights-check:
+	cd apps/insights-api && uv run ruff check . && uv run mypy insights_app && uv run pytest && uv run alembic check
+
+insights-migrate:
+	cd apps/insights-api && uv run alembic upgrade head
+
+insights-worker:
+	cd apps/insights-api && uv run python -m insights_app.worker
+
 web-dev:
 	cd apps/web && npm run dev
 
@@ -148,7 +163,7 @@ stack-status:
 	docker compose ps -a
 
 stack-logs:
-	docker compose logs -f gateway api api-worker contracts-api contracts-worker documents-api documents-worker notifications-api notifications-worker notifications-scheduler web
+	docker compose logs -f gateway api api-worker contracts-api contracts-worker documents-api documents-worker notifications-api notifications-worker notifications-scheduler insights-api insights-worker web
 
 stack-check:
 	set -e; set -a; . ./.env; set +a; curl -fsS "http://127.0.0.1:$${GATEWAY_PORT:-8080}/ready"; curl -fsS "http://127.0.0.1:$${WEB_PORT:-3000}/" >/dev/null; cd apps/notifications-api && GOVCONTROL_INTEGRATION=1 uv run pytest -q tests/test_service_integration.py

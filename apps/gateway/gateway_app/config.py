@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     contracts_api_url: str = "http://127.0.0.1:8010/api/v1"
     documents_api_url: str = "http://127.0.0.1:8020/api/v1"
     notifications_api_url: str = "http://127.0.0.1:8030/api/v1"
+    insights_api_url: str = "http://127.0.0.1:8040/api/v1"
     internal_service_token: SecretStr | None = SecretStr(
         "govcontrol-local-internal-token-change-me"
     )
@@ -55,6 +56,11 @@ class Settings(BaseSettings):
     document_upload_rate_limit_requests: int = 30
     notification_read_rate_limit_requests: int = 180
     notification_mutation_rate_limit_requests: int = 60
+    insights_request_timeout_seconds: float = 20.0
+    max_insights_payload_bytes: int = 256 * 1024
+    insights_dashboard_rate_limit_requests: int = 120
+    insights_search_rate_limit_requests: int = 120
+    insights_export_rate_limit_requests: int = 20
 
     oidc_issuer: str | None = None
     oidc_client_id: str | None = None
@@ -103,11 +109,27 @@ class Settings(BaseSettings):
             raise ValueError("rate limiting values must be positive")
         if self.document_upload_rate_limit_requests < 1:
             raise ValueError("DOCUMENT_UPLOAD_RATE_LIMIT_REQUESTS must be positive")
-        if min(
-            self.notification_read_rate_limit_requests,
-            self.notification_mutation_rate_limit_requests,
-        ) < 1:
+        if (
+            min(
+                self.notification_read_rate_limit_requests,
+                self.notification_mutation_rate_limit_requests,
+            )
+            < 1
+        ):
             raise ValueError("notification rate limits must be positive")
+        if self.insights_request_timeout_seconds <= 0:
+            raise ValueError("INSIGHTS_REQUEST_TIMEOUT_SECONDS must be positive")
+        if self.max_insights_payload_bytes < 1024:
+            raise ValueError("MAX_INSIGHTS_PAYLOAD_BYTES must be at least 1024")
+        if (
+            min(
+                self.insights_dashboard_rate_limit_requests,
+                self.insights_search_rate_limit_requests,
+                self.insights_export_rate_limit_requests,
+            )
+            < 1
+        ):
+            raise ValueError("insights rate limits must be positive")
         if self.cookie_samesite == "none" and not self.cookie_secure:
             raise ValueError("COOKIE_SAMESITE=none requires COOKIE_SECURE")
         if not 15 <= self.gateway_assertion_ttl_seconds <= 300:

@@ -45,6 +45,9 @@ class RequestGuardMiddleware(BaseHTTPMiddleware):
             "PATCH",
             "DELETE",
         }
+        insights_request = request.url.path.startswith("/api/v1/insights")
+        insights_search = request.url.path == "/api/v1/insights/search"
+        insights_export = "/exports" in request.url.path or request.url.path.endswith("/runs")
         origin = request.headers.get("origin")
         if (
             request.method in {"POST", "PUT", "PATCH", "DELETE"}
@@ -63,6 +66,8 @@ class RequestGuardMiddleware(BaseHTTPMiddleware):
                     if document_mutation
                     else self.settings.max_notification_payload_bytes
                     if notification_request
+                    else self.settings.max_insights_payload_bytes
+                    if insights_request
                     else self.settings.max_request_body_bytes
                 )
                 if int(content_length) > body_limit:
@@ -88,6 +93,12 @@ class RequestGuardMiddleware(BaseHTTPMiddleware):
             if notification_mutation
             else "notification-read"
             if notification_request
+            else "insights-export"
+            if insights_export
+            else "insights-search"
+            if insights_search
+            else "insights-dashboard"
+            if insights_request
             else "general"
         )
         key = f"govcontrol:gateway:rate:{rate_scope}:{window}:{subject}"
@@ -107,6 +118,12 @@ class RequestGuardMiddleware(BaseHTTPMiddleware):
             limit = self.settings.notification_mutation_rate_limit_requests
         elif notification_request:
             limit = self.settings.notification_read_rate_limit_requests
+        elif insights_export:
+            limit = self.settings.insights_export_rate_limit_requests
+        elif insights_search:
+            limit = self.settings.insights_search_rate_limit_requests
+        elif insights_request:
+            limit = self.settings.insights_dashboard_rate_limit_requests
         else:
             limit = self.settings.rate_limit_requests
         if count > limit:

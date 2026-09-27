@@ -57,9 +57,7 @@ class OIDCClient:
         if self._metadata is not None and self._metadata_expires_at > time.monotonic():
             return self._metadata
         try:
-            response = await self.http.get(
-                f"{self.issuer}/.well-known/openid-configuration"
-            )
+            response = await self.http.get(f"{self.issuer}/.well-known/openid-configuration")
             response.raise_for_status()
             metadata = cast("dict[str, Any]", response.json())
         except (httpx.HTTPError, ValueError) as exc:
@@ -69,9 +67,7 @@ class OIDCClient:
         for field in ("authorization_endpoint", "token_endpoint", "jwks_uri"):
             if not isinstance(metadata.get(field), str):
                 raise OIDCError("OIDC discovery is incomplete.")
-            if self.settings.app_env == "production" and not metadata[field].startswith(
-                "https://"
-            ):
+            if self.settings.app_env == "production" and not metadata[field].startswith("https://"):
                 raise OIDCError("OIDC discovery endpoint must use HTTPS.")
         self._metadata = metadata
         self._metadata_expires_at = time.monotonic() + 300
@@ -82,9 +78,11 @@ class OIDCClient:
         state = secrets.token_urlsafe(32)
         nonce = secrets.token_urlsafe(32)
         verifier = secrets.token_urlsafe(64)
-        challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(verifier.encode()).digest()
-        ).decode().rstrip("=")
+        challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+            .decode()
+            .rstrip("=")
+        )
         await self.redis.set(
             f"{self.preauth_prefix}{state}",
             json.dumps({"nonce": nonce, "verifier": verifier}),
@@ -110,9 +108,7 @@ class OIDCClient:
             raise OIDCError("OIDC state is invalid or expired.")
         try:
             preauth_data = json.loads(raw)
-            preauth = PreAuthRecord(
-                nonce=preauth_data["nonce"], verifier=preauth_data["verifier"]
-            )
+            preauth = PreAuthRecord(nonce=preauth_data["nonce"], verifier=preauth_data["verifier"])
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
             raise OIDCError("OIDC state is invalid or expired.") from exc
 
@@ -158,9 +154,7 @@ class OIDCClient:
             if header.get("alg") != "RS256" or not isinstance(header.get("kid"), str):
                 raise OIDCError("OIDC token algorithm is not allowed.")
             jwks = await self.jwks()
-            key_data = next(
-                key for key in jwks["keys"] if key.get("kid") == header["kid"]
-            )
+            key_data = next(key for key in jwks["keys"] if key.get("kid") == header["kid"])
             key = jwt.PyJWK.from_dict(key_data, algorithm="RS256").key
             claims = jwt.decode(
                 id_token,

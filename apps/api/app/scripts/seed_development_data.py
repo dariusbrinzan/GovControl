@@ -33,6 +33,14 @@ NOTIFICATION_PERMISSION_KEYS = (
     "notifications.admin",
     "notifications.audit",
 )
+INSIGHTS_PERMISSION_KEYS = (
+    "insights.read",
+    "insights.search",
+    "insights.report",
+    "insights.export",
+    "insights.admin",
+    "insights.audit",
+)
 
 
 async def seed_development_data() -> None:
@@ -65,6 +73,12 @@ async def seed_development_data() -> None:
             ),
             ("notifications.admin", "Manage tenant notification templates and deliveries."),
             ("notifications.audit", "View tenant notification audit events."),
+            ("insights.read", "View tenant GovInsights dashboards."),
+            ("insights.search", "Search tenant metadata through GovInsights."),
+            ("insights.report", "Create and run controlled GovInsights reports."),
+            ("insights.export", "Export authorized GovInsights report results."),
+            ("insights.admin", "Administer tenant GovInsights projections."),
+            ("insights.audit", "View tenant GovInsights audit events."),
         ):
             permission = await session.scalar(select(Permission).where(Permission.key == key))
             if permission is None:
@@ -91,6 +105,7 @@ async def seed_development_data() -> None:
                     AUDIT_VIEW_PERMISSION_KEY,
                     *DOCUMENT_PERMISSION_KEYS,
                     *NOTIFICATION_PERMISSION_KEYS,
+                    *INSIGHTS_PERMISSION_KEYS,
                 ),
             ),
             (
@@ -105,6 +120,8 @@ async def seed_development_data() -> None:
                     "notifications.read",
                     "notifications.manage",
                     "notifications.preferences",
+                    "insights.read",
+                    "insights.search",
                 ),
             ),
             (
@@ -117,6 +134,7 @@ async def seed_development_data() -> None:
                     AUDIT_VIEW_PERMISSION_KEY,
                     *DOCUMENT_PERMISSION_KEYS,
                     *NOTIFICATION_PERMISSION_KEYS,
+                    *INSIGHTS_PERMISSION_KEYS,
                 ),
             ),
             (
@@ -131,6 +149,8 @@ async def seed_development_data() -> None:
                     "notifications.read",
                     "notifications.manage",
                     "notifications.preferences",
+                    "insights.read",
+                    "insights.search",
                 ),
             ),
             (
@@ -145,6 +165,11 @@ async def seed_development_data() -> None:
                     "documents.audit",
                     "notifications.read",
                     "notifications.audit",
+                    "insights.read",
+                    "insights.search",
+                    "insights.report",
+                    "insights.export",
+                    "insights.audit",
                 ),
             ),
         )

@@ -89,9 +89,7 @@ async def test_authorization_code_flow_uses_pkce_and_one_time_state() -> None:
         if request.url.path == "/token":
             form = parse_qs(request.content.decode())
             observed_verifier = form["code_verifier"][0]
-            return httpx.Response(
-                200, json={"id_token": token(private_key, nonce=nonce_for_token)}
-            )
+            return httpx.Response(200, json={"id_token": token(private_key, nonce=nonce_for_token)})
         return httpx.Response(404)
 
     redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
@@ -105,9 +103,11 @@ async def test_authorization_code_flow_uses_pkce_and_one_time_state() -> None:
         nonce_for_token = raw["nonce"]
         identity = await client.complete(state=state, code="authorization-code")
         assert identity.subject == "oidc-user"
-        expected_challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(observed_verifier.encode()).digest()
-        ).decode().rstrip("=")
+        expected_challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(observed_verifier.encode()).digest())
+            .decode()
+            .rstrip("=")
+        )
         assert query["code_challenge"] == [expected_challenge]
         with pytest.raises(OIDCError, match="state"):
             await client.complete(state=state, code="replay")
