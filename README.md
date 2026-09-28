@@ -2,7 +2,7 @@
 GovControl – Operational Risk Platform for Public Administration
 
 The repository contains independently runnable application boundaries: the API gateway/BFF,
-Platform/GovLegal, GovContracts, GovDocuments, GovNotifications and the shared Next.js portal. See
+Platform/GovLegal, GovContracts, GovDocuments, GovNotifications, GovInsights and the shared Next.js portal. See
 [`docs/architecture.md`](docs/architecture.md) for ownership and communication rules.
 The reproducible local deployment procedure is documented in
 [`docs/local-deployment.md`](docs/local-deployment.md).
@@ -56,12 +56,14 @@ connects to either business database.
 
 ## Web interface
 
-The Next.js interface provides an institutional GovLegal workspace backed by the local API. It
+The Next.js interface provides an institutional workspace backed by the local APIs. It
 includes a responsive application shell, role-aware navigation, operational lists and detail
 pages, global search, notifications, audit history, reports and an analytics dashboard with
 accessible charts and CSV exports.
 The same portal exposes GovContracts at `/contracts`, with a contractual dashboard, status chart,
 registry, CSV export, create flow and complete contract files.
+GovInsights at `/insights` provides executive and module dashboards, accessible charts,
+tenant-scoped unified search, controlled saved reports and asynchronous CSV/XLSX exports.
 
 ```bash
 cd apps/web
@@ -93,6 +95,7 @@ make db-migrate
 make contracts-migrate
 make documents-migrate
 make notifications-migrate
+make insights-migrate
 ```
 
 Schema changes must be made through a new Alembic migration; do not modify the
@@ -155,11 +158,10 @@ are filtered by the tenant established by the backend.
 - GovLegal document views call the independent `/api/v1/documents` Gateway capability.
 - GovLegal publishes deadline, enforcement and penalty events; the unified notification inbox is
   served by GovNotifications through `/api/v1/notifications/*`.
-- `GET /api/v1/search/legal` and `GET /api/v1/audit/events`
-- `GET /api/v1/legal/analytics/dashboard` for tenant-scoped KPI and chart aggregates
-- `GET /api/v1/legal/analytics/filters` for tenant-scoped reporting filter options
+- `GET /api/v1/audit/events`; analytics and global search are now served by GovInsights
 
-The analytics endpoint requires `legal.report`; the audit endpoint requires `audit.view`.
+The retained legacy analytics implementation is no longer routed publicly. The audit endpoint
+requires `audit.view`; GovInsights has its own explicit read/search/report/export/audit permissions.
 Development seed data creates platform administrator, legal director, legal officer and auditor
 roles with scoped permissions.
 
@@ -191,6 +193,23 @@ mutation writes a local audit event and a versioned outbox event in the same tra
 
 Run the publisher locally with `make contracts-worker`. It delivers pending outbox messages to the
 `govcontrol.events` Redis Stream using an at-least-once delivery model.
+
+## GovInsights
+
+GovInsights is independently runnable on internal port `8040`, owns PostgreSQL schema `insights`
+and consumes controlled metadata events using its own Redis consumer group. It powers `/insights`,
+the GovLegal landing dashboard, unified search, saved reports and expiring object-storage exports.
+Browser traffic is accepted only through Gateway; Platform remains the identity/RBAC authority.
+
+```bash
+make insights-export-snapshots
+make insights-backfill       # idempotent initial import
+make insights-rebuild        # deliberate controlled replacement
+make insights-check
+```
+
+The HTTP/event contracts, data model, security boundaries, retention and recovery runbook are in
+[`docs/govinsights.md`](docs/govinsights.md).
 
 ## GovDocuments endpoints
 
@@ -230,10 +249,10 @@ event, delivery, retention, recovery and rollback details are in
 ## Containers
 
 `docker compose up --build` starts PostgreSQL, Redis, S3-compatible object storage, all APIs, the
-gateway and the Next.js interface. One-shot migration containers apply the four independent
+gateway and the Next.js interface. One-shot migration containers apply the five independent
 Alembic chains before the corresponding APIs and workers are allowed to start.
 Use `make db-migrate`, `make contracts-migrate`, `make documents-migrate` and
-`make notifications-migrate` when running directly.
+`make notifications-migrate`, `make insights-migrate` when running directly.
 For infrastructure-only local development, use `make platform-up`.
 The public application ports default to `8080` for the gateway and `3000` for the portal. Platform
 and GovContracts have no host ports in the normal Compose topology. Use `make stack-up-debug` to

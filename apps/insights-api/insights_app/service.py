@@ -58,15 +58,25 @@ async def dashboard(
 ) -> dict[str, Any]:
     conditions = _resource_conditions(tenant_id, filters, module)
 
-    async def buckets(column: Any) -> list[dict[str, Any]]:
+    async def buckets(column: Any, *extra_conditions: Any) -> list[dict[str, Any]]:
         label = func.coalesce(cast(column, String), "unassigned")
         rows = await session.execute(
             select(label, func.count())
-            .where(*conditions)
+            .where(*conditions, *extra_conditions)
             .group_by(column)
             .order_by(func.count().desc(), label)
         )
         return [{"key": str(key), "count": count} for key, count in rows.all()]
+
+    async def metric_count(*extra_conditions: Any) -> int:
+        return int(
+            await session.scalar(
+                select(func.count())
+                .select_from(ProjectionResource)
+                .where(*conditions, *extra_conditions)
+            )
+            or 0
+        )
 
     total = await session.scalar(
         select(func.count()).select_from(ProjectionResource).where(*conditions)
@@ -161,6 +171,74 @@ async def dashboard(
     stale = heartbeat is None or heartbeat < today - timedelta(
         seconds=settings.projection_stale_seconds
     )
+    active_status = or_(
+        ProjectionResource.status.is_(None),
+        ProjectionResource.status.not_in(TERMINAL_STATUSES),
+    )
+    operational_metrics: dict[str, float] = {
+        "active_obligations": await metric_count(
+            ProjectionResource.resource_type.in_(("obligation", "contract_obligation")),
+            active_status,
+        ),
+        "active_enforcements": await metric_count(
+            ProjectionResource.resource_type == "enforcement", active_status
+        ),
+        "overdue_milestones": await metric_count(
+            ProjectionResource.resource_type == "milestone",
+            ProjectionResource.due_at < today,
+            active_status,
+        ),
+        "overdue_contract_obligations": await metric_count(
+            ProjectionResource.resource_type == "contract_obligation",
+            ProjectionResource.due_at < today,
+            active_status,
+        ),
+        "overdue_payments": await metric_count(
+            ProjectionResource.resource_type == "payment",
+            ProjectionResource.due_at < today,
+            active_status,
+        ),
+    }
+    for days in (7, 30, 60, 90):
+        operational_metrics[f"expiring_contracts_{days}"] = await metric_count(
+            ProjectionResource.resource_type == "contract",
+            ProjectionResource.due_at >= today,
+            ProjectionResource.due_at < today + timedelta(days=days),
+            active_status,
+        )
+    for key, statuses in {
+        "documents_available": ("AVAILABLE",),
+        "documents_processing": ("QUARANTINED", "SCANNING", "UPLOADING"),
+        "documents_rejected": ("REJECTED",),
+        "documents_archived": ("ARCHIVED",),
+    }.items():
+        operational_metrics[key] = await metric_count(
+            ProjectionResource.resource_type == "document",
+            ProjectionResource.status.in_(statuses),
+        )
+    delivery_succeeded = await metric_count(
+        ProjectionResource.resource_type == "notification_delivery",
+        ProjectionResource.status.in_(("SENT", "DELIVERED", "SUCCEEDED")),
+    )
+    delivery_failed = await metric_count(
+        ProjectionResource.resource_type == "notification_delivery",
+        ProjectionResource.status == "FAILED",
+    )
+    operational_metrics.update(
+        {
+            "notifications_unread": await metric_count(
+                ProjectionResource.resource_type == "notification_recipient",
+                ProjectionResource.status == "UNREAD",
+            ),
+            "deliveries_succeeded": delivery_succeeded,
+            "deliveries_failed": delivery_failed,
+            "delivery_failure_rate": round(
+                delivery_failed * 100 / (delivery_succeeded + delivery_failed), 1
+            )
+            if delivery_succeeded + delivery_failed
+            else 0.0,
+        }
+    )
     return {
         "module": module,
         "total": int(total or 0),
@@ -168,6 +246,11 @@ async def dashboard(
         "by_type": await buckets(ProjectionResource.resource_type),
         "workload_by_department": await buckets(ProjectionResource.department_id),
         "workload_by_responsible": await buckets(ProjectionResource.responsible_user_id),
+        "by_court": await buckets(
+            ProjectionResource.attributes["court"].as_string(),
+            ProjectionResource.resource_type == "case",
+        ),
+        "operational_metrics": operational_metrics,
         "financial_exposure": [
             {"currency": currency, "category": category, "amount": amount}
             for currency, category, amount in exposure.all()
@@ -257,7 +340,8 @@ async def search_resources(
         .offset(offset)
     )
     items = []
-    for resource, item_rank in result.tuples().all():
+    for resource, item_rank in result:
+        assert isinstance(resource, ProjectionResource)
         items.append(
             {
                 "id": resource.id,
@@ -426,6 +510,18 @@ async def queue_report_run(
             expires_at=datetime.now(UTC) + timedelta(hours=settings.export_retention_hours),
         )
         session.add(artifact)
+        await session.flush()
+        session.add(
+            AuditEvent(
+                tenant_id=user.tenant_id,
+                actor_user_id=user.id,
+                action="export.queued",
+                entity_type="export",
+                entity_id=artifact.id,
+                request_id=current_request_id(),
+                payload={"format": export_format, "run_id": str(run.id)},
+            )
+        )
     session.add(
         AuditEvent(
             tenant_id=user.tenant_id,

@@ -83,6 +83,8 @@ class DashboardResponse(BaseModel):
     by_type: list[CountBucket]
     workload_by_department: list[CountBucket]
     workload_by_responsible: list[CountBucket]
+    by_court: list[CountBucket] = Field(default_factory=list)
+    operational_metrics: dict[str, float] = Field(default_factory=dict)
     financial_exposure: list[MoneyBucket]
     monthly_trend: list[MonthBucket]
     period_total: int

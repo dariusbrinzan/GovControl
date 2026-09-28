@@ -13,9 +13,9 @@ test("fluxul GovLegal real păstrează dashboardul, registrul și fișa dosarulu
   await page.goto("/legal");
   await page.getByRole("button", { name: "Conectează aplicația" }).click();
   await expect(page.getByRole("button", { name: /GovControl Development Admin/ })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Panou de control juridic" })).toBeVisible();
-  await expect(page.getByText("Obligații active", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Evoluția obligațiilor" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dashboard GovLegal" })).toBeVisible();
+  await expect(page.getByText("Obligații active", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Evoluție lunară" })).toBeVisible();
 
   await page.getByRole("link", { name: "Dosare", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Dosare juridice" })).toBeVisible();

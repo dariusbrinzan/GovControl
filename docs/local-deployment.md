@@ -8,8 +8,8 @@ is the supported deployment simulation until an actual Kubernetes environment is
 1. Copy `.env.example` to `.env`.
 2. Replace every `replace-with-*` value with a distinct local secret. Never commit `.env`.
 3. Start the complete stack with `make stack-up`.
-4. The one-shot `api-migrate`, `contracts-migrate`, `documents-migrate` and
-   `notifications-migrate` containers apply their
+4. The one-shot `api-migrate`, `contracts-migrate`, `documents-migrate`,
+   `notifications-migrate` and `insights-migrate` containers apply their
    independent Alembic histories before APIs and workers start.
 5. Seed the platform with `make db-seed`, then seed contracts with `make contracts-seed`.
 6. Verify dependencies and processes with `make stack-check` and `make stack-status`.
@@ -21,7 +21,7 @@ Default addresses are:
 - object storage S3 endpoint: `http://127.0.0.1:9000`.
 
 All business APIs are intentionally reachable only inside the Compose network. Run
-`make stack-up-debug` when localhost access to ports `8000`, `8010`, `8020` and `8030` is needed for
+`make stack-up-debug` when localhost access to ports `8000`, `8010`, `8020`, `8030` and `8040` is needed for
 debugging.
 Override `WEB_PORT` and `GATEWAY_PORT` when occupied. When either changes, also set
 `NEXT_PUBLIC_GATEWAY_URL`, `PUBLIC_BASE_URL`, `PORTAL_ORIGINS` and `PORTAL_AFTER_LOGIN_URL` before
@@ -39,9 +39,11 @@ SameSite session cookie.
 - `make db-down` stops PostgreSQL only.
 
 Gateway `/health` proves that the process is alive. `/ready` verifies Redis, Platform,
-GovContracts, GovDocuments and GovNotifications. GovNotifications `/ready` verifies PostgreSQL,
+GovContracts, GovDocuments, GovNotifications and GovInsights. GovNotifications `/ready` verifies PostgreSQL,
 Redis, Platform Identity and active channel configuration. Compose waits for readiness and
 successful migrations before starting dependents.
+GovInsights `/ready` additionally verifies object storage, worker heartbeat and projection
+freshness. Its status endpoint exposes stream lag and pending messages.
 
 Useful independent commands are `make documents-check`, `make documents-migrate` and
 `make documents-worker`. Operational contracts, retention, recovery and backfill/rollback are in
@@ -49,6 +51,9 @@ Useful independent commands are `make documents-check`, `make documents-migrate`
 GovNotifications equivalents are `make notifications-check`, `make notifications-migrate`,
 `make notifications-worker`, `make notifications-scheduler` and
 `make notifications-test-integration`; see [`govnotifications.md`](govnotifications.md).
+GovInsights equivalents are `make insights-check`, `make insights-migrate`,
+`make insights-worker`, `make insights-export-snapshots`, `make insights-backfill` and
+`make insights-rebuild`; see [`govinsights.md`](govinsights.md).
 
 ## Authentication and secrets
 

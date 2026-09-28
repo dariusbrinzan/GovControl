@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.department import Department
+from app.models.outbox import IntegrationOutboxEvent
 from app.models.rbac import Role, UserRole
 from app.models.tenant import Tenant
 from app.models.user import User
@@ -88,6 +89,21 @@ class PlatformService:
                     ),
                 },
             )
+            self._session.add(
+                IntegrationOutboxEvent(
+                    tenant_id=tenant_id,
+                    event_type="platform.department.created.v1",
+                    aggregate_type="Department",
+                    aggregate_id=department.id,
+                    payload={
+                        "resource_type": "department",
+                        "identifier": department.code,
+                        "display_label": department.name,
+                        "status": "ACTIVE",
+                        "version": 1,
+                    },
+                )
+            )
             await self._session.commit()
         except IntegrityError as exc:
             await self._session.rollback()
@@ -156,6 +172,22 @@ class PlatformService:
                     "department_id": str(user.department_id) if user.department_id else None,
                 },
             )
+            self._session.add(
+                IntegrationOutboxEvent(
+                    tenant_id=tenant_id,
+                    event_type="identity.user.created.v1",
+                    aggregate_type="User",
+                    aggregate_id=user.id,
+                    payload={
+                        "resource_type": "user",
+                        "identifier": f"USR-{str(user.id)[:8].upper()}",
+                        "display_label": user.display_name,
+                        "status": "ACTIVE",
+                        "department_id": str(user.department_id) if user.department_id else None,
+                        "version": 1,
+                    },
+                )
+            )
             await self._session.commit()
         except IntegrityError as exc:
             await self._session.rollback()
@@ -189,6 +221,22 @@ class PlatformService:
             entity_type="User",
             entity_id=user.id,
             new_value={"role_id": str(role.id), "role_key": role.key},
+        )
+        self._session.add(
+            IntegrationOutboxEvent(
+                tenant_id=tenant_id,
+                event_type="security.user.role_assigned.v1",
+                aggregate_type="User",
+                aggregate_id=user.id,
+                payload={
+                    "resource_type": "user",
+                    "identifier": f"USR-{str(user.id)[:8].upper()}",
+                    "display_label": user.display_name,
+                    "status": "ACTIVE" if user.is_active else "INACTIVE",
+                    "department_id": str(user.department_id) if user.department_id else None,
+                    "version": 1,
+                },
+            )
         )
         await self._session.commit()
         return True

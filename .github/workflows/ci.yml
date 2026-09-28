@@ -7,6 +7,22 @@ on:
 jobs:
   api:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: govcontrol_platform_ci
+          POSTGRES_USER: govcontrol
+          POSTGRES_PASSWORD: govcontrol-platform-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U govcontrol -d govcontrol_platform_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+asyncpg://govcontrol:govcontrol-platform-ci@127.0.0.1:5432/govcontrol_platform_ci
     defaults:
       run:
         working-directory: apps/api
@@ -19,8 +35,29 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy app
       - run: uv run pytest
+      - run: uv run alembic upgrade head
+      - run: uv run alembic check
+      - run: uv run alembic downgrade base
+      - run: uv run alembic upgrade head
+      - run: docker build .
   contracts-api:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: govcontrol_contracts_ci
+          POSTGRES_USER: govcontrol
+          POSTGRES_PASSWORD: govcontrol-contracts-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U govcontrol -d govcontrol_contracts_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      CONTRACTS_DATABASE_URL: postgresql+asyncpg://govcontrol:govcontrol-contracts-ci@127.0.0.1:5432/govcontrol_contracts_ci
     defaults:
       run:
         working-directory: apps/contracts-api
@@ -33,6 +70,11 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy contracts_app
       - run: uv run pytest
+      - run: uv run alembic upgrade head
+      - run: uv run alembic check
+      - run: uv run alembic downgrade base
+      - run: uv run alembic upgrade head
+      - run: docker build .
   gateway:
     runs-on: ubuntu-latest
     defaults:
@@ -47,6 +89,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy gateway_app
       - run: uv run pytest
+      - run: docker build .
   documents-api:
     runs-on: ubuntu-latest
     services:
@@ -173,4 +216,4 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e -- navigation.spec.ts notifications.spec.ts
+      - run: npm run test:e2e -- navigation.spec.ts notifications.spec.ts insights.spec.ts

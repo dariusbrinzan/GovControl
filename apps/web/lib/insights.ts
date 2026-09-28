@@ -19,6 +19,8 @@ export type InsightsDashboard = {
   by_type: CountBucket[];
   workload_by_department: CountBucket[];
   workload_by_responsible: CountBucket[];
+  by_court?: CountBucket[];
+  operational_metrics?: Record<string, number>;
   financial_exposure: MoneyBucket[];
   monthly_trend: MonthBucket[];
   period_total: number;

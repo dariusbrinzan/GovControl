@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -73,6 +74,11 @@ RESOURCE_TYPES = {
     "user": "user",
     "department": "department",
 }
+CONTROLLED_SOURCE_URL = re.compile(
+    r"^/(?:legal/(?:cases|decisions|obligations|enforcements|penalties|documents)/"
+    r"[0-9a-fA-F-]{36}|contracts/[0-9a-fA-F-]{36}|legal/notifications|"
+    r"platform/(?:users|departments)/[0-9a-fA-F-]{36})$"
+)
 
 
 def _module(event: EventEnvelope) -> str | None:
@@ -120,9 +126,11 @@ def controlled_projection(event: EventEnvelope) -> dict[str, Any] | None:
         raw_resource_type, raw_resource_type
     )
     source_id = _uuid(metadata.get("source_id")) or event.aggregate_id
-    source_url = str(
-        metadata.get("source_url")
-        or RESOURCE_PATHS.get(resource_type, f"/{module}").format(id=source_id)
+    requested_source_url = str(metadata.get("source_url") or "")
+    source_url = (
+        requested_source_url
+        if CONTROLLED_SOURCE_URL.fullmatch(requested_source_url)
+        else RESOURCE_PATHS.get(resource_type, f"/{module}").format(id=source_id)
     )
     identifier = metadata.get("identifier") or event.payload.get("contract_number")
     status = (

@@ -51,6 +51,21 @@ const moduleLabels: Record<string, string> = {
   documents: "GovDocuments",
   notifications: "GovNotifications",
 };
+const metricLabels: Record<string, string> = {
+  active_obligations: "Obligații active",
+  active_enforcements: "Executări active",
+  overdue_milestones: "Jaloane restante",
+  overdue_contract_obligations: "Obligații contractuale restante",
+  overdue_payments: "Plăți restante",
+  documents_available: "Documente disponibile",
+  documents_processing: "Documente în procesare",
+  documents_rejected: "Documente respinse",
+  documents_archived: "Documente arhivate",
+  notifications_unread: "Notificări necitite",
+  deliveries_succeeded: "Livrări reușite",
+  deliveries_failed: "Livrări eșuate",
+  dead_letter_events: "Evenimente în DLQ",
+};
 
 function DataTable({
   headers,
@@ -188,6 +203,49 @@ export function InsightsDashboardView({ module }: { module?: string }) {
       ...item,
       key: `${item.category} · ${item.currency}`,
     })) ?? [];
+  const metrics = data?.operational_metrics ?? {};
+  const contractExpiry = [7, 30, 60, 90].map((days) =>
+    Number(metrics[`expiring_contracts_${days}`] ?? 0),
+  );
+  const dueCumulative = data
+    ? [data.due_soon_7, data.due_soon_30, data.due_soon_60, data.due_soon_90]
+    : [0, 0, 0, 0];
+  const cumulative = module === "contracts" ? contractExpiry : dueCumulative;
+  const deadlineSeries = [
+    { key: "0–7 zile", count: cumulative[0] },
+    { key: "8–30 zile", count: Math.max(0, cumulative[1] - cumulative[0]) },
+    { key: "31–60 zile", count: Math.max(0, cumulative[2] - cumulative[1]) },
+    { key: "61–90 zile", count: Math.max(0, cumulative[3] - cumulative[2]) },
+  ];
+  const metricKeys =
+    module === "legal"
+      ? ["active_obligations", "active_enforcements"]
+      : module === "contracts"
+        ? ["overdue_milestones", "overdue_contract_obligations", "overdue_payments"]
+        : module === "documents"
+          ? [
+              "documents_available",
+              "documents_processing",
+              "documents_rejected",
+              "documents_archived",
+            ]
+          : module === "notifications"
+            ? [
+                "notifications_unread",
+                "deliveries_succeeded",
+                "deliveries_failed",
+                "dead_letter_events",
+              ]
+            : [
+                "active_obligations",
+                "overdue_payments",
+                "documents_rejected",
+                "deliveries_failed",
+              ];
+  const operationalSeries = metricKeys.map((key) => ({
+    key: metricLabels[key],
+    count: Number(metrics[key] ?? 0),
+  }));
   const title = module
     ? `Dashboard ${moduleLabels[module] ?? module}`
     : "Dashboard executiv instituțional";
@@ -505,6 +563,75 @@ export function InsightsDashboardView({ module }: { module?: string }) {
                   </BarChart>
                 </ResponsiveContainer>
               </ChartPanel>
+              <ChartPanel
+                title={module === "contracts" ? "Contracte care expiră" : "Termene viitoare"}
+                description="Intervale exclusive, fără dublarea elementelor între coloane."
+                empty={!deadlineSeries.some((row) => row.count > 0)}
+                table={
+                  <DataTable
+                    headers={["Interval", "Total"]}
+                    rows={deadlineSeries.map((row) => [row.key, row.count])}
+                  />
+                }
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={deadlineSeries} accessibilityLayer>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="key" />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip />
+                    <Bar dataKey="count" name="Total" fill="#0284c7" radius={[5, 5, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartPanel>
+              <ChartPanel
+                title="Indicatori operaționali"
+                description={
+                  module === "notifications"
+                    ? `Livrări eșuate: ${Number(metrics.delivery_failure_rate ?? 0).toLocaleString("ro-RO")}%`
+                    : "Indicatori calculați separat pentru tipurile relevante de resurse."
+                }
+                empty={!operationalSeries.some((row) => row.count > 0)}
+                table={
+                  <DataTable
+                    headers={["Indicator", "Total"]}
+                    rows={operationalSeries.map((row) => [row.key, row.count])}
+                  />
+                }
+              >
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={operationalSeries} layout="vertical" accessibilityLayer>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" allowDecimals={false} />
+                    <YAxis type="category" dataKey="key" width={145} />
+                    <Tooltip />
+                    <Bar dataKey="count" name="Total" fill="#475569" radius={[0, 5, 5, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartPanel>
+              {(module === "legal" || !module) && (data.by_court?.length ?? 0) > 0 ? (
+                <ChartPanel
+                  title="Dosare pe instanță"
+                  description="Distribuția dosarelor după instanța din metadatele controlate."
+                  empty={false}
+                  table={
+                    <DataTable
+                      headers={["Instanță", "Dosare"]}
+                      rows={(data.by_court ?? []).map((row) => [row.key, row.count])}
+                    />
+                  }
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={data.by_court ?? []} layout="vertical" accessibilityLayer>
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                      <XAxis type="number" allowDecimals={false} />
+                      <YAxis type="category" dataKey="key" width={145} />
+                      <Tooltip />
+                      <Bar dataKey="count" name="Dosare" fill="#7c3aed" radius={[0, 5, 5, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </ChartPanel>
+              ) : null}
               <ChartPanel
                 title="Valori pe categorie și monedă"
                 description="Fiecare categorie și monedă formează o serie distinctă."

@@ -237,6 +237,50 @@ async def test_rate_limit_and_upstream_failure(monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.asyncio
+async def test_insights_rate_limits_use_separate_scopes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DEV_AUTH_TOKEN", "server-only-development-token")
+    monkeypatch.setenv("RATE_LIMIT_REQUESTS", "100")
+    monkeypatch.setenv("INSIGHTS_DASHBOARD_RATE_LIMIT_REQUESTS", "1")
+    monkeypatch.setenv("INSIGHTS_SEARCH_RATE_LIMIT_REQUESTS", "2")
+    monkeypatch.setenv("INSIGHTS_EXPORT_RATE_LIMIT_REQUESTS", "1")
+    get_settings.cache_clear()
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/internal/auth/context"):
+            return httpx.Response(200, json=USER)
+        return httpx.Response(200, json={"ok": True})
+
+    app = create_application()
+    async with app.router.lifespan_context(app):
+        await app.state.http_client.aclose()
+        app.state.redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
+        app.state.http_client = httpx.AsyncClient(transport=httpx.MockTransport(upstream))
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://gateway.test"
+        ) as client:
+            login = await client.post("/auth/local/login")
+            csrf = login.json()["csrf_token"]
+            assert (await client.get("/api/v1/insights/dashboards/executive")).status_code == 200
+            assert (await client.get("/api/v1/insights/dashboards/legal")).status_code == 429
+            assert (await client.get("/api/v1/insights/search?q=case")).status_code == 200
+            assert (await client.get("/api/v1/insights/search?q=case")).status_code == 200
+            assert (await client.get("/api/v1/insights/search?q=case")).status_code == 429
+            run_path = (
+                "/api/v1/insights/reports/"
+                "00000000-0000-4000-8000-000000000001/runs"
+            )
+            assert (
+                await client.post(run_path, headers={"X-CSRF-Token": csrf}, json={})
+            ).status_code == 200
+            assert (
+                await client.post(run_path, headers={"X-CSRF-Token": csrf}, json={})
+            ).status_code == 429
+    get_settings.cache_clear()
+
+
+@pytest.mark.asyncio
 async def test_oidc_callback_creates_server_side_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

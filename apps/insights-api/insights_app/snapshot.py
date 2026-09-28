@@ -32,6 +32,19 @@ class SnapshotRecord(BaseModel):
     source_event_at: datetime
     deleted: bool = False
 
+    @model_validator(mode="after")
+    def validate_controlled_source_url(self) -> "SnapshotRecord":
+        allowed_prefixes = {
+            "legal": "/legal/",
+            "contracts": "/contracts/",
+            "documents": "/legal/documents/",
+            "notifications": "/legal/notifications",
+            "platform": "/platform/",
+        }
+        if not self.source_url.startswith(allowed_prefixes[self.module]):
+            raise ValueError("source_url is not controlled by the record module")
+        return self
+
 
 class ProjectionSnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")

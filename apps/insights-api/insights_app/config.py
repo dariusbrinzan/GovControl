@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     s3_secret_key: SecretStr | None = None
     s3_region: str = "us-east-1"
     export_max_rows: int = Field(100000, ge=1, le=1000000)
+    export_max_bytes: int = Field(52428800, ge=1024, le=1073741824)
+    export_timeout_seconds: float = Field(120.0, gt=0, le=3600)
     export_retention_hours: int = Field(24, ge=1, le=720)
 
     @model_validator(mode="after")

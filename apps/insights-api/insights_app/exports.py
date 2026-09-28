@@ -1,3 +1,4 @@
+import asyncio
 import csv
 import hashlib
 import io
@@ -12,6 +13,12 @@ from insights_app.config import Settings
 from insights_app.models import AuditEvent, ExportArtifact, OutboxEvent, ReportRun, SavedReport
 from insights_app.service import report_query
 from insights_app.storage import ExportStorage
+
+
+class ExportLimitError(RuntimeError):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 
 
 def safe_cell(value: Any) -> Any:
@@ -42,6 +49,8 @@ def render_xlsx(columns: list[str], rows: list[list[Any]]) -> bytes:
 async def process_export(
     session: AsyncSession, storage: ExportStorage, artifact: ExportArtifact, settings: Settings
 ) -> None:
+    artifact_id = artifact.id
+    run_id = artifact.run_id
     run = await session.get(ReportRun, artifact.run_id)
     report = await session.get(SavedReport, run.report_id) if run else None
     if run is None or report is None or run.tenant_id != artifact.tenant_id:
@@ -65,24 +74,34 @@ async def process_export(
     artifact.status = "RUNNING"
     await session.commit()
     try:
-        resources = list(
-            (
-                await session.scalars(
-                    report_query(report, artifact.tenant_id).limit(settings.export_max_rows + 1)
+        async with asyncio.timeout(settings.export_timeout_seconds):
+            resources = list(
+                (
+                    await session.scalars(
+                        report_query(report, artifact.tenant_id).limit(
+                            settings.export_max_rows + 1
+                        )
+                    )
+                ).all()
+            )
+            if len(resources) > settings.export_max_rows:
+                raise ExportLimitError("ROW_LIMIT_EXCEEDED")
+            rows = [
+                [getattr(resource, column) for column in report.columns]
+                for resource in resources
+            ]
+            if artifact.format == "csv":
+                data = render_csv(report.columns, rows)
+                content_type = "text/csv; charset=utf-8"
+            else:
+                data = render_xlsx(report.columns, rows)
+                content_type = (
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
-            ).all()
-        )
-        if len(resources) > settings.export_max_rows:
-            raise OverflowError("ROW_LIMIT_EXCEEDED")
-        rows = [[getattr(resource, column) for column in report.columns] for resource in resources]
-        if artifact.format == "csv":
-            data = render_csv(report.columns, rows)
-            content_type = "text/csv; charset=utf-8"
-        else:
-            data = render_xlsx(report.columns, rows)
-            content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        key = f"{artifact.tenant_id}/{artifact.owner_user_id}/{artifact.id}.{artifact.format}"
-        await storage.put(key, data, content_type)
+            if len(data) > settings.export_max_bytes:
+                raise ExportLimitError("SIZE_LIMIT_EXCEEDED")
+            key = f"{artifact.tenant_id}/{artifact.owner_user_id}/{artifact.id}.{artifact.format}"
+            await storage.put(key, data, content_type)
         artifact.storage_key = key
         artifact.content_type = content_type
         artifact.size_bytes = len(data)
@@ -110,15 +129,18 @@ async def process_export(
         await session.commit()
     except Exception as exc:
         await session.rollback()
-        failed_artifact = await session.get(ExportArtifact, artifact.id)
-        failed_run = await session.get(ReportRun, run.id)
+        failed_artifact = await session.get(ExportArtifact, artifact_id)
+        failed_run = await session.get(ReportRun, run_id)
         if failed_artifact is not None:
             failed_artifact.status = "FAILED"
         if failed_run is not None:
             failed_run.status = "FAILED"
-            failed_run.error_code = (
-                "ROW_LIMIT_EXCEEDED" if isinstance(exc, OverflowError) else "EXPORT_FAILED"
-            )
+            if isinstance(exc, ExportLimitError):
+                failed_run.error_code = exc.code
+            elif isinstance(exc, TimeoutError):
+                failed_run.error_code = "TIME_LIMIT_EXCEEDED"
+            else:
+                failed_run.error_code = "EXPORT_FAILED"
             failed_run.completed_at = datetime.now(UTC)
             session.add(
                 OutboxEvent(
@@ -186,22 +208,29 @@ async def process_report_run(session: AsyncSession, run: ReportRun, settings: Se
     else:
         run.status = "RUNNING"
         await session.flush()
-        row_count = int(
-            await session.scalar(
-                select(func.count()).select_from(
-                    report_query(report, run.tenant_id)
-                    .limit(settings.export_max_rows + 1)
-                    .subquery()
+        try:
+            async with asyncio.timeout(settings.export_timeout_seconds):
+                row_count = int(
+                    await session.scalar(
+                        select(func.count()).select_from(
+                            report_query(report, run.tenant_id)
+                            .limit(settings.export_max_rows + 1)
+                            .subquery()
+                        )
+                    )
+                    or 0
                 )
-            )
-            or 0
-        )
-        if row_count > settings.export_max_rows:
+        except TimeoutError:
             run.status = "FAILED"
-            run.error_code = "ROW_LIMIT_EXCEEDED"
+            run.error_code = "TIME_LIMIT_EXCEEDED"
+            row_count = None
         else:
-            run.status = "SUCCEEDED"
-            run.row_count = row_count
+            if row_count > settings.export_max_rows:
+                run.status = "FAILED"
+                run.error_code = "ROW_LIMIT_EXCEEDED"
+            else:
+                run.status = "SUCCEEDED"
+                run.row_count = row_count
     run.completed_at = datetime.now(UTC)
     session.add(
         OutboxEvent(

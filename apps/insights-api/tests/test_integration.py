@@ -28,7 +28,13 @@ from insights_app.models import (
 )
 from insights_app.projections import apply_event
 from insights_app.schemas import DashboardFilter, EventEnvelope, ReportCreate, UserContext
-from insights_app.service import create_report, dashboard, list_reports, queue_report_run
+from insights_app.service import (
+    create_report,
+    dashboard,
+    list_reports,
+    queue_report_run,
+    search_resources,
+)
 from insights_app.storage import LocalExportStorage
 from insights_app.worker import consume_new, ensure_group, recover_pending
 
@@ -176,10 +182,101 @@ async def test_dashboard_keeps_currency_and_resource_categories_separate() -> No
                 ("payment", "RON", Decimal("30.00")),
             }
             assert result["due_soon_7"] == 3
+            assert result["operational_metrics"]["expiring_contracts_7"] == 2
     finally:
         async with session_factory() as session:
             await session.execute(
                 delete(ProjectionResource).where(ProjectionResource.tenant_id == tenant_id)
+            )
+            await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_search_ranking_filters_pagination_and_tenant_isolation() -> None:
+    tenant_id, foreign_tenant = uuid.uuid4(), uuid.uuid4()
+    responsible_id = uuid.uuid4()
+    now = datetime.now(UTC)
+    values = [
+        (tenant_id, "ALPHA", "Exact", "ACTIVE"),
+        (tenant_id, "ALPHA-002", "Prefix", "ACTIVE"),
+        (tenant_id, "ZZ-ALPHA", "Contains", "CLOSED"),
+        (foreign_tenant, "ALPHA", "Foreign", "ACTIVE"),
+    ]
+    try:
+        async with session_factory() as session:
+            session.add_all(
+                [
+                    ProjectionResource(
+                        tenant_id=scoped_tenant,
+                        module="legal",
+                        resource_type="case",
+                        source_id=uuid.uuid4(),
+                        identifier=identifier,
+                        display_label=label,
+                        status=item_status,
+                        responsible_user_id=responsible_id,
+                        occurred_at=now,
+                        source_url=f"/legal/cases/{uuid.uuid4()}",
+                        attributes={},
+                        source_version=1,
+                        source_event_at=now,
+                    )
+                    for scoped_tenant, identifier, label, item_status in values
+                ]
+            )
+            await session.commit()
+            first_page, total = await search_resources(
+                session,
+                tenant_id,
+                "alpha",
+                "legal",
+                "case",
+                None,
+                responsible_id,
+                now.date(),
+                now.date(),
+                2,
+                0,
+            )
+            assert total == 3
+            assert [item["rank"] for item in first_page] == [0, 1]
+            assert [item["identifier"] for item in first_page] == ["ALPHA", "ALPHA-002"]
+            second_page, second_total = await search_resources(
+                session,
+                tenant_id,
+                "alpha",
+                "legal",
+                "case",
+                None,
+                responsible_id,
+                now.date(),
+                now.date(),
+                2,
+                2,
+            )
+            assert second_total == 3
+            assert [item["identifier"] for item in second_page] == ["ZZ-ALPHA"]
+            active, active_total = await search_resources(
+                session,
+                tenant_id,
+                None,
+                "legal",
+                "case",
+                "ACTIVE",
+                None,
+                None,
+                None,
+                10,
+                0,
+            )
+            assert active_total == len(active) == 2
+            assert all(item["display_label"] != "Foreign" for item in active)
+    finally:
+        async with session_factory() as session:
+            await session.execute(
+                delete(ProjectionResource).where(
+                    ProjectionResource.tenant_id.in_([tenant_id, foreign_tenant])
+                )
             )
             await session.commit()
 
@@ -339,6 +436,108 @@ async def test_report_export_visibility_and_expiry(tmp_path: Path) -> None:
                 )
             )
             await session.commit()
+            report = await create_report(
+                session,
+                owner,
+                ReportCreate(
+                    name=f"Integration {uuid.uuid4()}",
+                    resource_type="case",
+                    filters={"module": "legal"},
+                    columns=["identifier", "status"],
+                    shared_with_roles=["auditor"],
+                ),
+            )
+            report_id = report.id
+            assert await list_reports(session, unrelated) == []
+            assert [item.id for item in await list_reports(session, auditor)] == [report.id]
+
+            run, artifact = await queue_report_run(session, owner, report.id, "csv", settings)
+            assert artifact is not None
+            await process_export(session, storage, artifact, settings)
+            await session.refresh(run)
+            await session.refresh(artifact)
+            assert run.status == "SUCCEEDED"
+            assert run.row_count == 1
+            assert artifact.status == "SUCCEEDED"
+            assert artifact.storage_key is not None
+            assert b"CASE-INTEGRATION-1" in await storage.get(artifact.storage_key)
+
+            artifact.expires_at = now - timedelta(seconds=1)
+            await session.commit()
+            assert await cleanup_expired_exports(session, storage, datetime.now(UTC)) == 1
+            assert await session.get(ExportArtifact, artifact.id) is None
+            with pytest.raises(FileNotFoundError):
+                await storage.get(artifact.storage_key)
+
+            session.add_all(
+                [
+                    ProjectionResource(
+                        tenant_id=tenant_id,
+                        module="legal",
+                        resource_type="case",
+                        source_id=uuid.uuid4(),
+                        identifier=f"CASE-LARGE-{index}",
+                        display_label="x" * 500,
+                        status="ACTIVE",
+                        occurred_at=now,
+                        source_url=f"/legal/cases/{uuid.uuid4()}",
+                        attributes={},
+                        source_version=1,
+                        source_event_at=now,
+                    )
+                    for index in range(3)
+                ]
+            )
+            report.columns = ["identifier", "display_label", "status"]
+            await session.commit()
+            size_run, size_artifact = await queue_report_run(
+                session,
+                owner,
+                report_id,
+                "csv",
+                settings.model_copy(update={"export_max_bytes": 1024}),
+            )
+            assert size_artifact is not None
+            await process_export(
+                session,
+                storage,
+                size_artifact,
+                settings.model_copy(update={"export_max_bytes": 1024}),
+            )
+            await session.refresh(size_run)
+            assert size_run.status == "FAILED"
+            assert size_run.error_code == "SIZE_LIMIT_EXCEEDED"
+
+            timeout_run, timeout_artifact = await queue_report_run(
+                session,
+                owner,
+                report_id,
+                "csv",
+                settings.model_copy(update={"export_timeout_seconds": 0.000001}),
+            )
+            assert timeout_artifact is not None
+            await process_export(
+                session,
+                storage,
+                timeout_artifact,
+                settings.model_copy(update={"export_timeout_seconds": 0.000001}),
+            )
+            await session.refresh(timeout_run)
+            assert timeout_run.status == "FAILED"
+            assert timeout_run.error_code == "TIME_LIMIT_EXCEEDED"
+    finally:
+        async with session_factory() as session:
+            await session.execute(delete(OutboxEvent).where(OutboxEvent.tenant_id == tenant_id))
+            await session.execute(delete(AuditEvent).where(AuditEvent.tenant_id == tenant_id))
+            await session.execute(
+                delete(ExportArtifact).where(ExportArtifact.tenant_id == tenant_id)
+            )
+            await session.execute(delete(ReportRun).where(ReportRun.tenant_id == tenant_id))
+            await session.execute(delete(SavedReport).where(SavedReport.tenant_id == tenant_id))
+            await session.execute(
+                delete(ProjectionResource).where(ProjectionResource.tenant_id == tenant_id)
+            )
+            await session.commit()
 
 
 @pytest.mark.asyncio
@@ -398,49 +597,5 @@ async def test_readiness_reports_dependency_failure(
                 delete(ProjectionCheckpoint).where(
                     ProjectionCheckpoint.consumer == settings.consumer_group
                 )
-            )
-            await session.commit()
-            report = await create_report(
-                session,
-                owner,
-                ReportCreate(
-                    name=f"Integration {uuid.uuid4()}",
-                    resource_type="case",
-                    filters={"module": "legal"},
-                    columns=["identifier", "status"],
-                    shared_with_roles=["auditor"],
-                ),
-            )
-            assert await list_reports(session, unrelated) == []
-            assert [item.id for item in await list_reports(session, auditor)] == [report.id]
-
-            run, artifact = await queue_report_run(session, owner, report.id, "csv", settings)
-            assert artifact is not None
-            await process_export(session, storage, artifact, settings)
-            await session.refresh(run)
-            await session.refresh(artifact)
-            assert run.status == "SUCCEEDED"
-            assert run.row_count == 1
-            assert artifact.status == "SUCCEEDED"
-            assert artifact.storage_key is not None
-            assert b"CASE-INTEGRATION-1" in await storage.get(artifact.storage_key)
-
-            artifact.expires_at = now - timedelta(seconds=1)
-            await session.commit()
-            assert await cleanup_expired_exports(session, storage, datetime.now(UTC)) == 1
-            assert await session.get(ExportArtifact, artifact.id) is None
-            with pytest.raises(FileNotFoundError):
-                await storage.get(artifact.storage_key)
-    finally:
-        async with session_factory() as session:
-            await session.execute(delete(OutboxEvent).where(OutboxEvent.tenant_id == tenant_id))
-            await session.execute(delete(AuditEvent).where(AuditEvent.tenant_id == tenant_id))
-            await session.execute(
-                delete(ExportArtifact).where(ExportArtifact.tenant_id == tenant_id)
-            )
-            await session.execute(delete(ReportRun).where(ReportRun.tenant_id == tenant_id))
-            await session.execute(delete(SavedReport).where(SavedReport.tenant_id == tenant_id))
-            await session.execute(
-                delete(ProjectionResource).where(ProjectionResource.tenant_id == tenant_id)
             )
             await session.commit()

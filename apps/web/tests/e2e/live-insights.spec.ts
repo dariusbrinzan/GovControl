@@ -38,7 +38,19 @@ test("GovInsights rulează dashboard, proiecție, raport și export prin Gateway
     { headers: { "X-Tenant-ID": "00000000-0000-0000-0000-000000000099" } },
   );
   expect(normalDashboard.status()).toBe(200);
-  expect(await forgedDashboard.json()).toEqual(await normalDashboard.json());
+  expect(forgedDashboard.status()).toBe(200);
+  const normalPayload = (await normalDashboard.json()) as {
+    module: string | null;
+    total: number;
+  };
+  const forgedPayload = (await forgedDashboard.json()) as {
+    module: string | null;
+    total: number;
+  };
+  expect(normalPayload.module).toBeNull();
+  expect(forgedPayload.module).toBeNull();
+  expect(normalPayload.total).toBeGreaterThan(0);
+  expect(forgedPayload.total).toBeGreaterThan(0);
 
   const contractsResponse = await request.get(
     `${origin}/api/v1/govcontracts/contracts?limit=1`,

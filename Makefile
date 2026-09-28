@@ -149,7 +149,7 @@ web-test:
 	cd apps/web && npm test
 
 web-test-e2e:
-	cd apps/web && npm run test:e2e
+	cd apps/web && npm run test:e2e -- 'tests/e2e/(insights|navigation|notifications)\.spec\.ts$$'
 
 web-test-e2e-live:
 	set -a; . ./.env; set +a; trap 'cd "$(CURDIR)" && make notifications-clean-e2e insights-clean-e2e; cd "$(CURDIR)/apps/documents-api" && uv run python -m documents_app.cleanup_e2e' EXIT; make notifications-clean-e2e insights-clean-e2e; cd apps/documents-api && uv run python -m documents_app.cleanup_e2e; cd ../web && npm run test:e2e -- live-contracts.spec.ts live-documents.spec.ts live-insights.spec.ts live-legal.spec.ts live-notifications.spec.ts --workers=1

@@ -101,6 +101,21 @@ async def _cached_dashboard(
         # Redis is an optimization here. The database remains the source of truth.
         pass
     result = await dashboard(session, user.tenant_id, filters, settings, module)
+    if module in (None, "notifications"):
+        dead_letter_count = 0
+        try:
+            entries = await request.app.state.redis.xrevrange(
+                settings.dead_letter_stream_name, count=400
+            )
+            for _, fields in entries:
+                try:
+                    event = EventEnvelope.model_validate_json(fields.get("event", ""))
+                except Exception:
+                    continue
+                dead_letter_count += int(event.tenant_id == user.tenant_id)
+        except Exception:
+            pass
+        result["operational_metrics"]["dead_letter_events"] = dead_letter_count
     serialized = DashboardResponse.model_validate(result).model_dump_json()
     try:
         await request.app.state.redis.set(

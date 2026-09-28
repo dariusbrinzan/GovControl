@@ -59,6 +59,14 @@ def test_existing_contract_event_aliases_are_normalized() -> None:
     assert projection["status"] == "ACTIVE"
 
 
+def test_uncontrolled_source_url_is_replaced() -> None:
+    event = envelope(identifier="CTR-8", source_url="https://attacker.example/redirect")
+    event.aggregate_type = "Contract"
+    projection = controlled_projection(event)
+    assert projection is not None
+    assert projection["source_url"] == f"/contracts/{event.aggregate_id}"
+
+
 def test_legal_class_names_are_normalized() -> None:
     event = envelope(identifier="DOS-1")
     event.type = "legal.case.updated.v1"

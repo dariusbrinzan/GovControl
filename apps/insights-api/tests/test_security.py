@@ -7,7 +7,8 @@ from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
 from insights_app.config import Settings
-from insights_app.security import assertion_ids
+from insights_app.schemas import UserContext
+from insights_app.security import assertion_ids, require_permission
 
 
 def settings() -> Settings:
@@ -42,3 +43,19 @@ def test_browser_supplied_unsigned_identity_is_rejected() -> None:
     with pytest.raises(HTTPException) as exc:
         assertion_ids(None, settings())
     assert exc.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_permission_dependency_rejects_missing_insights_scope() -> None:
+    context = UserContext(
+        id=uuid.uuid4(),
+        tenant_id=uuid.uuid4(),
+        email="officer@example.test",
+        display_name="Officer",
+        roles=["legal_officer"],
+        permissions=["legal.manage"],
+    )
+    dependency = require_permission("insights.read")
+    with pytest.raises(HTTPException) as exc:
+        await dependency(context)
+    assert exc.value.status_code == 403
