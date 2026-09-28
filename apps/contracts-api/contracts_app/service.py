@@ -124,9 +124,7 @@ class ContractService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def list_contracts(
-        self, tenant_id: uuid.UUID, limit: int, offset: int
-    ) -> list[Contract]:
+    async def list_contracts(self, tenant_id: uuid.UUID, limit: int, offset: int) -> list[Contract]:
         return list(
             await self.session.scalars(
                 select(Contract)
@@ -198,7 +196,11 @@ class ContractService:
         )
         self.session.add(item)
         await self.session.flush()
-        payload = {"contract_number": item.contract_number, "status": item.status.value}
+        payload = {
+            "contract_number": item.contract_number,
+            "status": item.status.value,
+            **self._contract_projection(item),
+        }
         self.session.add_all(
             [
                 ContractAuditEvent(
@@ -243,7 +245,11 @@ class ContractService:
             raise InvalidContractTransitionError
         old_status = item.status
         item.status = new_status
-        payload = {"old_status": old_status.value, "new_status": new_status.value}
+        payload = {
+            "old_status": old_status.value,
+            "new_status": new_status.value,
+            **self._contract_projection(item),
+        }
         self.session.add_all(
             [
                 ContractStatusHistory(
@@ -295,7 +301,10 @@ class ContractService:
             raise ContractConflictError
         for field, value in changes.items():
             setattr(item, field, value)
-        payload = {"changed_fields": ",".join(sorted(changes))}
+        payload = {
+            "changed_fields": ",".join(sorted(changes)),
+            **self._contract_projection(item),
+        }
         self._record_change(tenant_id, actor_id, contract_id, "updated", payload)
         await self.session.commit()
         await self.session.refresh(item)
@@ -460,7 +469,14 @@ class ContractService:
         self.session.add(item)
         await self.session.flush()
         self._record_change(
-            tenant_id, actor_id, contract_id, "milestone-added", {"milestone_id": str(item.id)}
+            tenant_id,
+            actor_id,
+            contract_id,
+            "milestone-added",
+            {
+                "milestone_id": str(item.id),
+                **self._milestone_projection(item),
+            },
         )
         await self.session.commit()
         await self.session.refresh(item)
@@ -497,6 +513,7 @@ class ContractService:
                 "milestone_id": str(item.id),
                 "old_status": old_status.value,
                 "new_status": new_status.value,
+                **self._milestone_projection(item),
             },
         )
         await self.session.commit()
@@ -535,7 +552,14 @@ class ContractService:
         self.session.add(item)
         await self.session.flush()
         self._record_change(
-            tenant_id, actor_id, contract_id, "obligation-added", {"obligation_id": str(item.id)}
+            tenant_id,
+            actor_id,
+            contract_id,
+            "obligation-added",
+            {
+                "obligation_id": str(item.id),
+                **self._obligation_projection(item),
+            },
         )
         await self.session.commit()
         await self.session.refresh(item)
@@ -571,15 +595,14 @@ class ContractService:
                 "obligation_id": str(item.id),
                 "old_status": old_status.value,
                 "new_status": new_status.value,
+                **self._obligation_projection(item),
             },
         )
         await self.session.commit()
         await self.session.refresh(item)
         return item
 
-    async def payments(
-        self, tenant_id: uuid.UUID, contract_id: uuid.UUID
-    ) -> list[ContractPayment]:
+    async def payments(self, tenant_id: uuid.UUID, contract_id: uuid.UUID) -> list[ContractPayment]:
         await self.get(tenant_id, contract_id)
         return list(
             await self.session.scalars(
@@ -609,7 +632,14 @@ class ContractService:
         self.session.add(item)
         await self.session.flush()
         self._record_change(
-            tenant_id, actor_id, contract_id, "payment-planned", {"payment_id": str(item.id)}
+            tenant_id,
+            actor_id,
+            contract_id,
+            "payment-planned",
+            {
+                "payment_id": str(item.id),
+                **self._payment_projection(item),
+            },
         )
         await self.session.commit()
         await self.session.refresh(item)
@@ -646,6 +676,7 @@ class ContractService:
                 "payment_id": str(item.id),
                 "old_status": old_status.value,
                 "new_status": new_status.value,
+                **self._payment_projection(item),
             },
         )
         await self.session.commit()
@@ -684,6 +715,65 @@ class ContractService:
                 ),
             ]
         )
+
+    @staticmethod
+    def _contract_projection(item: Contract) -> dict[str, str]:
+        return {
+            "identifier": item.contract_number,
+            "display_label": item.title,
+            "status": item.status.value,
+            "department_id": str(item.responsible_department_id or ""),
+            "responsible_user_id": str(item.responsible_user_id or ""),
+            "occurred_at": str(item.start_date),
+            "due_at": str(item.end_date),
+            "amount": str(item.value),
+            "currency": item.currency.upper(),
+            "source_url": f"/contracts/{item.id}",
+            "version": "1",
+        }
+
+    @staticmethod
+    def _milestone_projection(item: ContractMilestone) -> dict[str, str]:
+        return {
+            "resource_type": "milestone",
+            "source_id": str(item.id),
+            "identifier": f"MS-{str(item.id)[:8].upper()}",
+            "display_label": item.title,
+            "status": item.status.value,
+            "due_at": str(item.due_date),
+            "source_url": f"/contracts/{item.contract_id}",
+            "version": "1",
+        }
+
+    @staticmethod
+    def _obligation_projection(item: ContractObligation) -> dict[str, str]:
+        return {
+            "resource_type": "contract_obligation",
+            "source_id": str(item.id),
+            "identifier": f"COB-{str(item.id)[:8].upper()}",
+            "display_label": "Obligație contractuală",
+            "status": item.status.value,
+            "responsible_user_id": str(item.responsible_user_id or ""),
+            "due_at": str(item.due_date or ""),
+            "source_url": f"/contracts/{item.contract_id}",
+            "version": "1",
+        }
+
+    @staticmethod
+    def _payment_projection(item: ContractPayment) -> dict[str, str]:
+        return {
+            "resource_type": "payment",
+            "source_id": str(item.id),
+            "identifier": item.reference or f"PAY-{str(item.id)[:8].upper()}",
+            "display_label": "Plată contractuală",
+            "status": item.status.value,
+            "due_at": str(item.due_date),
+            "amount": str(item.amount),
+            "currency": item.currency.upper(),
+            "source_url": f"/contracts/{item.contract_id}",
+            "version": "1",
+            **({"occurred_at": str(item.paid_date)} if item.paid_date else {}),
+        }
 
     async def audit_events(
         self, tenant_id: uuid.UUID, limit: int, offset: int

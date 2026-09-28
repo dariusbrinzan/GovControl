@@ -190,9 +190,7 @@ class DocumentService:
         )
         self.session.add_all([document, version, link])
         self._audit(document, actor_id, "document.uploaded", {"checksum": checksum})
-        self._event(
-            document, actor_id, "document.uploaded.v1", {"version_id": str(version_id)}
-        )
+        self._event(document, actor_id, "document.uploaded.v1", {"version_id": str(version_id)})
         if state == DocumentState.AVAILABLE:
             self._audit(document, actor_id, "document.scan_clean", None)
             self._event(
@@ -310,8 +308,8 @@ class DocumentService:
         include_deleted: bool,
     ) -> tuple[list[DocumentResponse], int]:
         statement = select(Document).where(Document.tenant_id == tenant_id)
-        count_statement = select(func.count()).select_from(Document).where(
-            Document.tenant_id == tenant_id
+        count_statement = (
+            select(func.count()).select_from(Document).where(Document.tenant_id == tenant_id)
         )
         if not include_deleted:
             statement = statement.where(Document.deleted_at.is_(None))
@@ -598,6 +596,20 @@ class DocumentService:
                 event_type=event_type,
                 aggregate_type="Document",
                 aggregate_id=document.id,
-                payload={"recipient_user_id": str(actor_id), **(payload or {})},
+                payload={
+                    "recipient_user_id": str(actor_id),
+                    "identifier": f"DOC-{str(document.id)[:8].upper()}",
+                    "display_label": document.category,
+                    "status": "ARCHIVED"
+                    if document.archived_at
+                    else str(getattr(document.state, "value", document.state)),
+                    "responsible_user_id": str(document.created_by_user_id),
+                    "occurred_at": document.created_at.isoformat() if document.created_at else None,
+                    "due_at": str(document.retention_until) if document.retention_until else None,
+                    "source_url": f"/legal/documents/{document.id}",
+                    "version": document.lock_version,
+                    "deleted": document.deleted_at is not None,
+                    **(payload or {}),
+                },
             )
         )

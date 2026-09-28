@@ -326,6 +326,9 @@ services:
       APP_ENV: ${APP_ENV:-development}
       INSIGHTS_DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
       PLATFORM_API_URL: http://api:8000/api/v1
+      CONTRACTS_API_URL: http://contracts-api:8010/api/v1
+      DOCUMENTS_API_URL: http://documents-api:8020/api/v1
+      NOTIFICATIONS_API_URL: http://notifications-api:8030/api/v1
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
       GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
       REDIS_URL: redis://redis:6379/0
@@ -343,8 +346,14 @@ services:
     depends_on:
       api:
         condition: service_healthy
+      contracts-api:
+        condition: service_healthy
+      documents-api:
+        condition: service_healthy
       insights-migrate:
         condition: service_completed_successfully
+      notifications-api:
+        condition: service_healthy
       object-storage:
         condition: service_healthy
       postgres:
@@ -381,6 +390,9 @@ services:
       APP_ENV: ${APP_ENV:-development}
       INSIGHTS_DATABASE_URL: postgresql+asyncpg://govcontrol:${POSTGRES_PASSWORD}@postgres:5432/govcontrol
       PLATFORM_API_URL: http://api:8000/api/v1
+      CONTRACTS_API_URL: http://contracts-api:8010/api/v1
+      DOCUMENTS_API_URL: http://documents-api:8020/api/v1
+      NOTIFICATIONS_API_URL: http://notifications-api:8030/api/v1
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:-govcontrol-local-internal-token-change-me}
       GATEWAY_ASSERTION_SECRET: ${GATEWAY_ASSERTION_SECRET:-govcontrol-local-gateway-assertion-change-me}
       REDIS_URL: redis://redis:6379/0

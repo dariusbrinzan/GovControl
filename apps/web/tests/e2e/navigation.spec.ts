@@ -7,7 +7,7 @@ const user = {
   email: "test@govcontrol.local",
   display_name: "Test User",
   roles: ["platform_admin"],
-  permissions: ["legal.manage", "legal.report", "contracts.manage", "contracts.report", "documents.read"],
+  permissions: ["legal.manage", "legal.report", "contracts.manage", "contracts.report", "documents.read", "insights.read", "insights.search", "insights.report"],
 };
 
 async function mockSession(page: import("@playwright/test").Page, authenticated = true) {
@@ -20,7 +20,7 @@ async function mockSession(page: import("@playwright/test").Page, authenticated 
 test("shell-ul instituțional și conectarea sunt accesibile", async ({ page }) => {
   await mockSession(page, false);
   await page.goto("/legal");
-  await expect(page.getByRole("heading", { name: "Panou de control juridic" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dashboard GovLegal" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Navigare GovLegal" })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "Conectează spațiul de lucru" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Conectează aplicația" })).toBeFocused();
@@ -28,6 +28,9 @@ test("shell-ul instituțional și conectarea sunt accesibile", async ({ page }) 
 
 test("navigarea deschide registrul de obligații", async ({ page }) => {
   await mockSession(page);
+  await page.route("**/api/v1/insights/dashboards/legal", (route) =>
+    route.fulfill({ status: 403, json: { detail: "test" } }),
+  );
   await page.goto("/legal");
   await expect(page.getByRole("button", { name: /Test User/ })).toBeVisible();
   await page.getByRole("link", { name: "Obligații", exact: true }).click();
@@ -37,7 +40,7 @@ test("navigarea deschide registrul de obligații", async ({ page }) => {
 
 test("o sesiune revocată revine la ecranul de autentificare", async ({ page }) => {
   await mockSession(page);
-  await page.route("**/api/v1/platform/legal/analytics/**", (route) =>
+  await page.route("**/api/v1/insights/dashboards/legal", (route) =>
     route.fulfill({ status: 401, json: { detail: "Authentication is required." } }),
   );
   await page.goto("/legal");

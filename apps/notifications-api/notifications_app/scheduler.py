@@ -62,9 +62,7 @@ async def process_due_schedules(batch_size: int = 100) -> int:
         return count
 
 
-async def recipient_address(
-    client: httpx.AsyncClient, tenant_id: object, user_id: object
-) -> str:
+async def recipient_address(client: httpx.AsyncClient, tenant_id: object, user_id: object) -> str:
     settings = get_settings()
     if settings.internal_service_token is None:
         raise RuntimeError("IDENTITY_NOT_CONFIGURED")
@@ -130,6 +128,16 @@ async def process_deliveries(client: httpx.AsyncClient, redis: Redis) -> int:
                             payload={
                                 "notification_id": str(notification.id),
                                 "channel": channel.value,
+                                "resource_type": "notification_delivery",
+                                "source_id": str(delivery.id),
+                                "identifier": f"NDL-{str(delivery.id)[:8].upper()}",
+                                "display_label": channel.value,
+                                "status": "DELIVERED",
+                                "responsible_user_id": str(delivery.recipient_user_id),
+                                "occurred_at": delivery.created_at.isoformat(),
+                                "source_url": "/legal/notifications",
+                                "delivery_status": "DELIVERED",
+                                "version": 1,
                             },
                         ),
                     ]
@@ -164,6 +172,19 @@ async def process_deliveries(client: httpx.AsyncClient, redis: Redis) -> int:
                                 "channel": channel.value,
                                 "attempt": delivery.attempt_count,
                                 "dead_letter": dead_letter,
+                                "resource_type": "notification_delivery",
+                                "source_id": str(delivery.id),
+                                "identifier": f"NDL-{str(delivery.id)[:8].upper()}",
+                                "display_label": channel.value,
+                                "status": "DEAD_LETTER" if dead_letter else "FAILED",
+                                "responsible_user_id": str(delivery.recipient_user_id),
+                                "occurred_at": delivery.created_at.isoformat(),
+                                "due_at": delivery.next_attempt_at.isoformat()
+                                if delivery.next_attempt_at
+                                else None,
+                                "source_url": "/legal/notifications",
+                                "delivery_status": "DEAD_LETTER" if dead_letter else "FAILED",
+                                "version": 1,
                             },
                         ),
                     ]
@@ -190,9 +211,11 @@ async def cleanup_expired() -> int:
             delete(NotificationAuditEvent).where(NotificationAuditEvent.created_at < cutoff)
         )
         result = await session.scalars(
-            delete(Notification).where(
+            delete(Notification)
+            .where(
                 Notification.expires_at.is_not(None), Notification.expires_at < datetime.now(UTC)
-            ).returning(Notification.id)
+            )
+            .returning(Notification.id)
         )
         return len(result.all())
 

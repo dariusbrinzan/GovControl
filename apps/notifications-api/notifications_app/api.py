@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from notifications_app.database import get_session
+from notifications_app.export_insights import snapshot as insights_snapshot
 from notifications_app.models import NotificationStatus
 from notifications_app.schemas import (
     AuditResponse,
@@ -40,6 +41,15 @@ PreferenceOwner = Annotated[
 ]
 Administrator = Annotated[UserContext, Depends(require_permission("notifications.admin"))]
 Auditor = Annotated[UserContext, Depends(require_permission("notifications.audit"))]
+
+
+@router.get(
+    "/internal/insights/snapshot/{tenant_id}",
+    dependencies=[Depends(require_internal_service)],
+    include_in_schema=False,
+)
+async def export_insights_snapshot(tenant_id: uuid.UUID) -> dict[str, object]:
+    return await insights_snapshot(tenant_id)
 
 
 def map_error(exc: Exception) -> HTTPException:

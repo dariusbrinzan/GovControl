@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from contracts_app.database import get_session
+from contracts_app.export_insights import snapshot as insights_snapshot
 from contracts_app.models import Contract, ContractAmendment, ContractMilestone
 from contracts_app.schemas import ContractResponse
 from contracts_app.security import CurrentUser, InternalService
@@ -14,6 +15,13 @@ from contracts_app.service import ContractNotFoundError, ContractService
 router = APIRouter(prefix="/internal", include_in_schema=False)
 Session = Annotated[AsyncSession, Depends(get_session)]
 TenantHeader = Annotated[uuid.UUID, Header(alias="X-Tenant-ID")]
+
+
+@router.get("/insights/snapshot/{tenant_id}")
+async def export_insights_snapshot(
+    tenant_id: uuid.UUID, _: InternalService
+) -> dict[str, object]:
+    return await insights_snapshot(tenant_id)
 
 
 @router.get("/contracts/{contract_id}", response_model=ContractResponse)

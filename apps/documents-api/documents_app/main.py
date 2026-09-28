@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from documents_app.api import router
 from documents_app.config import get_settings
 from documents_app.database import session_factory
+from documents_app.internal import router as internal_router
 from documents_app.observability import RequestContextMiddleware
 from documents_app.storage import S3Storage
 
@@ -44,6 +45,7 @@ def create_application() -> FastAPI:
     )
     app.add_middleware(RequestContextMiddleware)
     app.include_router(router, prefix="/api/v1")
+    app.include_router(internal_router, prefix="/api/v1")
 
     @app.get("/health")
     async def health() -> dict[Literal["status", "service"], str]:

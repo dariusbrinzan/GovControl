@@ -40,11 +40,9 @@ POLICIES = {
     "platform": UpstreamPolicy(
         base_url_setting="platform_api_url",
         roots={
-            "analytics": frozenset({"GET"}),
             "audit": frozenset({"GET"}),
             "legal": frozenset({"GET", "POST", "PATCH"}),
             "platform": frozenset({"GET", "POST", "PUT"}),
-            "search": frozenset({"GET"}),
         },
     ),
     "govcontracts": UpstreamPolicy(
@@ -82,11 +80,13 @@ INSIGHTS_ROUTE_METHODS = {
     "insights/dashboards/executive": frozenset({"GET"}),
     "insights/search": frozenset({"GET"}),
     "insights/metadata": frozenset({"GET"}),
+    "insights/audit": frozenset({"GET"}),
     "insights/reports": frozenset({"GET", "POST"}),
     "insights/runs": frozenset({"GET"}),
     "insights/exports": frozenset({"GET"}),
     "insights/projections/status": frozenset({"GET"}),
     "insights/projections/rebuild": frozenset({"POST"}),
+    "insights/admin/dead-letter": frozenset({"GET"}),
 }
 INSIGHTS_DASHBOARD_ROUTE = re.compile(
     r"^insights/dashboards/(legal|contracts|documents|notifications|platform)$"
@@ -94,6 +94,9 @@ INSIGHTS_DASHBOARD_ROUTE = re.compile(
 INSIGHTS_REPORT_ITEM_ROUTE = re.compile(r"^insights/reports/[0-9a-fA-F-]{36}$")
 INSIGHTS_REPORT_RUN_ROUTE = re.compile(r"^insights/reports/[0-9a-fA-F-]{36}/runs$")
 INSIGHTS_EXPORT_DOWNLOAD_ROUTE = re.compile(r"^insights/exports/[0-9a-fA-F-]{36}/download$")
+INSIGHTS_DEAD_LETTER_RETRY_ROUTE = re.compile(
+    r"^insights/admin/dead-letter/[0-9]+-[0-9]+/retry$"
+)
 
 
 def _validate_route(service: str, path: str, method: str) -> UpstreamPolicy:
@@ -101,6 +104,8 @@ def _validate_route(service: str, path: str, method: str) -> UpstreamPolicy:
     if policy is None or not path:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Gateway route is not registered.")
     if "\\" in path or "\x00" in path or any(part in {"", ".", ".."} for part in path.split("/")):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Gateway route is not registered.")
+    if service == "platform" and path.startswith("legal/analytics"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Gateway route is not registered.")
     if service == "notifications":
         methods = NOTIFICATION_ROUTE_METHODS.get(path)
@@ -121,6 +126,8 @@ def _validate_route(service: str, path: str, method: str) -> UpstreamPolicy:
             methods = frozenset({"POST"})
         elif methods is None and INSIGHTS_EXPORT_DOWNLOAD_ROUTE.fullmatch(path):
             methods = frozenset({"GET"})
+        elif methods is None and INSIGHTS_DEAD_LETTER_RETRY_ROUTE.fullmatch(path):
+            methods = frozenset({"POST"})
         if methods is None or method not in methods:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Gateway route is not registered.")
     if service == "govcontracts" and path.startswith("contracts/notifications"):

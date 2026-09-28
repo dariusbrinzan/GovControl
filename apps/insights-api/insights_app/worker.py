@@ -12,7 +12,13 @@ from sqlalchemy import select
 
 from insights_app.config import Settings, get_settings
 from insights_app.database import session_factory
-from insights_app.exports import next_exports, process_export
+from insights_app.exports import (
+    cleanup_expired_exports,
+    next_exports,
+    next_report_runs,
+    process_export,
+    process_report_run,
+)
 from insights_app.models import OutboxEvent, ProjectionCheckpoint
 from insights_app.projections import apply_event
 from insights_app.schemas import EventEnvelope
@@ -65,6 +71,45 @@ async def publish_outbox(redis: Redis, settings: Settings) -> int:
     return published
 
 
+async def record_heartbeat(settings: Settings) -> None:
+    now = datetime.now(UTC)
+    async with session_factory() as session:
+        checkpoint = await session.get(ProjectionCheckpoint, settings.consumer_group)
+        if checkpoint is None:
+            checkpoint = ProjectionCheckpoint(
+                consumer=settings.consumer_group,
+                last_stream_id="0-0",
+                last_heartbeat_at=now,
+                processed_count=0,
+                failed_count=0,
+                projection_version=0,
+            )
+            session.add(checkpoint)
+        else:
+            checkpoint.last_heartbeat_at = now
+        await session.commit()
+
+
+async def record_failure(settings: Settings, stream_id: str) -> None:
+    now = datetime.now(UTC)
+    async with session_factory() as session:
+        checkpoint = await session.get(ProjectionCheckpoint, settings.consumer_group)
+        if checkpoint is None:
+            checkpoint = ProjectionCheckpoint(
+                consumer=settings.consumer_group,
+                last_stream_id=stream_id,
+                last_heartbeat_at=now,
+                processed_count=0,
+                failed_count=1,
+                projection_version=0,
+            )
+            session.add(checkpoint)
+        else:
+            checkpoint.failed_count += 1
+            checkpoint.last_heartbeat_at = now
+        await session.commit()
+
+
 async def process_message(
     redis: Redis, settings: Settings, stream_id: str, fields: dict[str, str]
 ) -> bool:
@@ -84,11 +129,7 @@ async def process_message(
             },
         )
         await redis.xack(settings.event_stream_name, settings.consumer_group, stream_id)
-        async with session_factory() as session:
-            checkpoint = await session.get(ProjectionCheckpoint, settings.consumer_group)
-            if checkpoint:
-                checkpoint.failed_count += 1
-                await session.commit()
+        await record_failure(settings, stream_id)
         return False
 
 
@@ -133,6 +174,7 @@ async def recover_pending(redis: Redis, settings: Settings) -> int:
                 },
             )
             await redis.xack(settings.event_stream_name, settings.consumer_group, stream_id)
+            await record_failure(settings, stream_id)
             continue
         await asyncio.sleep(min(settings.retry_base_seconds * (2 ** max(0, attempts - 1)), 30.0))
         recovered += int(await process_message(redis, settings, stream_id, fields))
@@ -145,6 +187,7 @@ async def run() -> None:
     storage = create_storage(settings)
     await storage.ready()
     await ensure_group(redis, settings)
+    await record_heartbeat(settings)
     stopped = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -152,9 +195,13 @@ async def run() -> None:
     try:
         while not stopped.is_set():
             try:
+                await record_heartbeat(settings)
                 await publish_outbox(redis, settings)
                 await recover_pending(redis, settings)
                 async with session_factory() as session:
+                    await cleanup_expired_exports(session, storage, datetime.now(UTC))
+                    for run_item in await next_report_runs(session, 10):
+                        await process_report_run(session, run_item, settings)
                     for artifact in await next_exports(session, 10):
                         await process_export(session, storage, artifact, settings)
                 await consume_new(redis, settings)

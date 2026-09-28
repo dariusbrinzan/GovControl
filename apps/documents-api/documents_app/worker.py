@@ -103,6 +103,16 @@ async def scan_batch(storage: S3Storage, batch_size: int = 10) -> int:
                     payload={
                         "version_id": str(current.id),
                         "recipient_user_id": str(current.created_by_user_id),
+                        "identifier": f"DOC-{str(document.id)[:8].upper()}",
+                        "display_label": document.category,
+                        "status": str(getattr(current.state, "value", current.state)),
+                        "responsible_user_id": str(document.created_by_user_id),
+                        "occurred_at": document.created_at.isoformat(),
+                        "due_at": str(document.retention_until)
+                        if document.retention_until
+                        else None,
+                        "source_url": f"/legal/documents/{document.id}",
+                        "version": document.lock_version,
                     },
                 )
             )

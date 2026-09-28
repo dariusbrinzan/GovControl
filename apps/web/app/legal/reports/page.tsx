@@ -1,2 +1,5 @@
-import ReportsPage from "../../../components/legal/reports-page";
-export default function Page() { return <ReportsPage />; }
+import { redirect } from "next/navigation";
+
+export default function Page() {
+  redirect("/insights/reports");
+}

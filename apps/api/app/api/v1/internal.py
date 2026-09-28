@@ -15,6 +15,7 @@ from app.core.security import (
 )
 from app.models.user import User
 from app.repositories.legal import LegalRepository
+from app.scripts.export_insights_snapshot import snapshot as insights_snapshot
 from app.services.identity import FederatedIdentityUnavailableError, IdentityService
 from app.services.platform import PlatformService
 
@@ -34,6 +35,13 @@ class NotificationRecipientResponse(BaseModel):
     user_id: uuid.UUID
     tenant_id: uuid.UUID
     email: EmailStr
+
+
+@router.get("/insights/snapshot/{tenant_id}")
+async def export_insights_snapshot(
+    tenant_id: uuid.UUID, _: InternalServiceDependency
+) -> dict[str, object]:
+    return await insights_snapshot(tenant_id)
 
 
 @router.get("/auth/context", response_model=CurrentUserResponse)

@@ -67,12 +67,34 @@ const contractGroups: NavigationGroup[] = [
   },
 ];
 
+const insightsGroups: NavigationGroup[] = [
+  {
+    label: "Intelligence instituțional",
+    items: [
+      { href: "/insights", label: "Dashboard executiv", icon: LayoutDashboard, exact: true, permission: "insights.read" },
+      { href: "/insights/legal", label: "Analiză juridică", icon: Gavel, permission: "insights.read" },
+      { href: "/insights/contracts", label: "Analiză contracte", icon: BriefcaseBusiness, permission: "insights.read" },
+      { href: "/insights/documents", label: "Analiză documente", icon: Files, permission: "insights.read" },
+      { href: "/insights/notifications", label: "Analiză notificări", icon: Bell, permission: "insights.read" },
+    ],
+  },
+  {
+    label: "Căutare și raportare",
+    items: [
+      { href: "/insights/search", label: "Căutare unificată", icon: Search, permission: "insights.search" },
+      { href: "/insights/reports", label: "Constructor rapoarte", icon: FileCheck2, permission: "insights.report" },
+      { href: "/insights/exports", label: "Istoric exporturi", icon: Files, permission: "insights.export" },
+    ],
+  },
+];
+
 const pageNames: Record<string, string> = {
   legal: "Panou de control", "my-work": "Activitatea mea", cases: "Dosare",
   decisions: "Hotărâri", obligations: "Obligații", deadlines: "Termene critice",
   enforcements: "Executări", penalties: "Penalități", documents: "Documente",
   notifications: "Notificări", audit: "Jurnal de audit", reports: "Rapoarte",
   contracts: "Panou de control", registry: "Registru contracte",
+  insights: "Dashboard executiv", search: "Căutare unificată", exports: "Exporturi",
 };
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -85,10 +107,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [connecting, setConnecting] = useState(false);
   const [query, setQuery] = useState("");
   const contractModule = pathname.startsWith("/contracts");
-  const groups = contractModule ? contractGroups : legalGroups;
-  const moduleRoot = contractModule ? "/contracts" : "/legal";
-  const moduleName = contractModule ? "GovContracts" : "GovLegal";
-  const ModuleIcon = contractModule ? BriefcaseBusiness : Gavel;
+  const insightsModule = pathname.startsWith("/insights");
+  const groups = insightsModule ? insightsGroups : contractModule ? contractGroups : legalGroups;
+  const moduleRoot = insightsModule ? "/insights" : contractModule ? "/contracts" : "/legal";
+  const moduleName = insightsModule ? "GovInsights" : contractModule ? "GovContracts" : "GovLegal";
+  const ModuleIcon = insightsModule ? LayoutDashboard : contractModule ? BriefcaseBusiness : Gavel;
 
   useEffect(() => setMobileOpen(false), [pathname]);
   const connectionVisible = showConnection || (ready && !user);
@@ -109,7 +132,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const submitSearch = (event: FormEvent) => {
     event.preventDefault();
     if (query.trim().length < 2) return;
-    const target = contractModule ? "/contracts/registry" : "/legal/search";
+    const target = insightsModule || user?.permissions.includes("insights.search")
+      ? "/insights/search"
+      : contractModule ? "/contracts/registry" : "/legal/search";
     router.push(`${target}?q=${encodeURIComponent(query.trim())}`);
   };
 
@@ -129,6 +154,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="module-switcher" aria-label="Schimbă modulul">
           <Link className={!contractModule ? "active" : ""} href="/legal"><Gavel size={15} /><span>GovLegal</span></Link>
           {(!user || user.permissions.includes("contracts.report") || user.permissions.includes("contracts.manage")) ? <Link className={contractModule ? "active" : ""} href="/contracts"><BriefcaseBusiness size={15} /><span>GovContracts</span></Link> : null}
+          {(!user || user.permissions.includes("insights.read")) ? <Link className={insightsModule ? "active" : ""} href="/insights"><LayoutDashboard size={15} /><span>GovInsights</span></Link> : null}
         </div>
         <nav className="sidebar-nav" aria-label={`Navigare ${moduleName}`}>
           {groups.map((group) => <div className="nav-group" key={group.label}>
@@ -151,7 +177,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header className="portal-topbar">
           <button className="icon-button mobile-only" onClick={() => setMobileOpen(true)} aria-label="Deschide meniul"><Menu size={21} /></button>
           <nav className="breadcrumbs" aria-label="Breadcrumb"><Link href={moduleRoot}>{moduleName}</Link><span>/</span><strong>{currentName}</strong></nav>
-          <form className="global-search" onSubmit={submitSearch} role="search"><Search size={17} /><input aria-label={`Caută în ${moduleName}`} minLength={2} onChange={(event) => setQuery(event.target.value)} placeholder={contractModule ? "Caută număr, titlu…" : "Caută dosar, obligație…"} value={query} /><kbd>⌘ K</kbd></form>
+          <form className="global-search" onSubmit={submitSearch} role="search"><Search size={17} /><input aria-label="Căutare globală GovControl" minLength={2} onChange={(event) => setQuery(event.target.value)} placeholder="Caută în toate modulele…" value={query} /><kbd>⌘ K</kbd></form>
           <div className="topbar-actions">
             <NotificationBell href={contractModule ? "/contracts/notifications" : "/legal/notifications"} />
             <button className="profile-button" onClick={() => setShowConnection(true)} type="button"><span className="avatar"><UserRound size={17} /></span><span className="profile-copy"><strong>{user?.display_name ?? "Conectare"}</strong><small>{user?.roles[0]?.replaceAll("_", " ") ?? "Mediu local"}</small></span><ChevronDown size={15} /></button>

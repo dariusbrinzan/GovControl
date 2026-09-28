@@ -24,6 +24,9 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("INSIGHTS_DATABASE_URL", "DATABASE_URL")
     )
     platform_api_url: str = "http://127.0.0.1:8000/api/v1"
+    contracts_api_url: str = "http://127.0.0.1:8010/api/v1"
+    documents_api_url: str = "http://127.0.0.1:8020/api/v1"
+    notifications_api_url: str = "http://127.0.0.1:8030/api/v1"
     internal_service_token: SecretStr | None = None
     gateway_assertion_secret: SecretStr | None = None
     gateway_assertion_issuer: str = "govcontrol-gateway"
@@ -43,6 +46,7 @@ class Settings(BaseSettings):
     worker_poll_interval_seconds: float = Field(1.0, gt=0, le=60)
     outbox_batch_size: int = Field(100, ge=1, le=1000)
     projection_stale_seconds: int = Field(300, ge=30, le=86400)
+    dashboard_cache_seconds: int = Field(15, ge=1, le=300)
 
     export_storage_backend: Literal["local", "s3"] = "local"
     export_storage_path: Path = Path("./data/insights-exports")

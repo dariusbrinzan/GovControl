@@ -79,9 +79,25 @@ class ProjectionCheckpoint(Base):
     last_stream_id: Mapped[str] = mapped_column(String(64), nullable=False)
     last_event_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     processed_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     failed_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
     projection_version: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+
+
+class BackfillState(Base):
+    __tablename__ = "backfill_states"
+
+    source: Mapped[str] = mapped_column(String(80), primary_key=True)
+    checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    cursor: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    expected_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    imported_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="RUNNING")
+    last_error: Mapped[str | None] = mapped_column(String(500))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
 
 
 class SavedReport(Base):
@@ -125,7 +141,10 @@ class ReportRun(Base):
 
 class ExportArtifact(Base):
     __tablename__ = "export_artifacts"
-    __table_args__ = (Index("ix_export_tenant_owner", "tenant_id", "owner_user_id"),)
+    __table_args__ = (
+        Index("ix_export_tenant_owner", "tenant_id", "owner_user_id"),
+        Index("ix_export_expires", "expires_at"),
+    )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     owner_user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)

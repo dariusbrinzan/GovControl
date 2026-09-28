@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import Select, and_, case, delete, func, or_, select
+from sqlalchemy import Select, String, and_, case, cast, delete, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from insights_app.config import Settings
@@ -17,6 +17,10 @@ from insights_app.models import (
 )
 from insights_app.observability import current_request_id
 from insights_app.schemas import DashboardFilter, ReportCreate, UserContext
+
+TERMINAL_STATUSES = frozenset(
+    {"ARCHIVED", "CANCELLED", "CLOSED", "COMPLETED", "DELIVERED", "PAID", "REJECTED"}
+)
 
 
 def _resource_conditions(
@@ -55,11 +59,12 @@ async def dashboard(
     conditions = _resource_conditions(tenant_id, filters, module)
 
     async def buckets(column: Any) -> list[dict[str, Any]]:
+        label = func.coalesce(cast(column, String), "unassigned")
         rows = await session.execute(
-            select(func.coalesce(column, "unassigned"), func.count())
+            select(label, func.count())
             .where(*conditions)
             .group_by(column)
-            .order_by(func.count().desc(), func.coalesce(column, "unassigned"))
+            .order_by(func.count().desc(), label)
         )
         return [{"key": str(key), "count": count} for key, count in rows.all()]
 
@@ -69,7 +74,14 @@ async def dashboard(
     today = datetime.now(UTC)
 
     async def due_count(after: datetime | None, before: datetime) -> int:
-        due_conditions = [*conditions, ProjectionResource.due_at < before]
+        due_conditions = [
+            *conditions,
+            ProjectionResource.due_at < before,
+            or_(
+                ProjectionResource.status.is_(None),
+                ProjectionResource.status.not_in(TERMINAL_STATUSES),
+            ),
+        ]
         if after is not None:
             due_conditions.append(ProjectionResource.due_at >= after)
         return int(
@@ -80,18 +92,73 @@ async def dashboard(
         )
 
     exposure = await session.execute(
-        select(ProjectionResource.currency, func.sum(ProjectionResource.amount))
+        select(
+            ProjectionResource.currency,
+            ProjectionResource.resource_type,
+            func.sum(ProjectionResource.amount),
+        )
         .where(
             *conditions,
             ProjectionResource.amount.is_not(None),
             ProjectionResource.currency.is_not(None),
         )
-        .group_by(ProjectionResource.currency)
-        .order_by(ProjectionResource.currency)
+        .group_by(ProjectionResource.currency, ProjectionResource.resource_type)
+        .order_by(ProjectionResource.currency, ProjectionResource.resource_type)
+    )
+    trend = await session.execute(
+        select(
+            func.date_trunc("month", ProjectionResource.occurred_at).label("month"),
+            func.count(),
+        )
+        .where(*conditions, ProjectionResource.occurred_at.is_not(None))
+        .group_by("month")
+        .order_by("month")
+    )
+    period_end = (
+        datetime.combine(filters.date_to + timedelta(days=1), datetime.min.time(), UTC)
+        if filters.date_to
+        else today
+    )
+    period_start = (
+        datetime.combine(filters.date_from, datetime.min.time(), UTC)
+        if filters.date_from
+        else period_end - timedelta(days=30)
+    )
+    period_duration = max(period_end - period_start, timedelta(days=1))
+    comparison_conditions = _resource_conditions(
+        tenant_id,
+        DashboardFilter(
+            department_id=filters.department_id,
+            responsible_user_id=filters.responsible_user_id,
+        ),
+        module,
+    )
+
+    async def count_period(start: datetime, end: datetime) -> int:
+        return int(
+            await session.scalar(
+                select(func.count())
+                .select_from(ProjectionResource)
+                .where(
+                    *comparison_conditions,
+                    ProjectionResource.occurred_at >= start,
+                    ProjectionResource.occurred_at < end,
+                )
+            )
+            or 0
+        )
+
+    period_total = await count_period(period_start, period_end)
+    previous_period_total = await count_period(period_start - period_duration, period_start)
+    period_change_percent = (
+        round((period_total - previous_period_total) * 100 / previous_period_total, 1)
+        if previous_period_total
+        else None
     )
     checkpoint = await session.get(ProjectionCheckpoint, settings.consumer_group)
     last_updated = checkpoint.last_processed_at if checkpoint else None
-    stale = last_updated is None or last_updated < today - timedelta(
+    heartbeat = checkpoint.last_heartbeat_at if checkpoint else None
+    stale = heartbeat is None or heartbeat < today - timedelta(
         seconds=settings.projection_stale_seconds
     )
     return {
@@ -100,9 +167,18 @@ async def dashboard(
         "by_status": await buckets(ProjectionResource.status),
         "by_type": await buckets(ProjectionResource.resource_type),
         "workload_by_department": await buckets(ProjectionResource.department_id),
+        "workload_by_responsible": await buckets(ProjectionResource.responsible_user_id),
         "financial_exposure": [
-            {"currency": currency, "amount": amount} for currency, amount in exposure.all()
+            {"currency": currency, "category": category, "amount": amount}
+            for currency, category, amount in exposure.all()
         ],
+        "monthly_trend": [
+            {"month": str(month)[:7], "count": count}
+            for month, count in trend.all()
+        ],
+        "period_total": period_total,
+        "previous_period_total": previous_period_total,
+        "period_change_percent": period_change_percent,
         "overdue": await due_count(None, today),
         "due_soon_7": await due_count(today, today + timedelta(days=7)),
         "due_soon_30": await due_count(today, today + timedelta(days=30)),
@@ -117,7 +193,7 @@ async def dashboard(
 async def search_resources(
     session: AsyncSession,
     tenant_id: uuid.UUID,
-    query: str,
+    query: str | None,
     module: str | None,
     resource_type: str | None,
     status: str | None,
@@ -127,16 +203,19 @@ async def search_resources(
     limit: int,
     offset: int,
 ) -> tuple[list[dict[str, Any]], int]:
-    normalized = query.strip().lower()
-    pattern = f"%{normalized}%"
     conditions = [
         ProjectionResource.tenant_id == tenant_id,
         ProjectionResource.deleted.is_(False),
-        or_(
-            func.lower(func.coalesce(ProjectionResource.identifier, "")).like(pattern),
-            func.lower(func.coalesce(ProjectionResource.display_label, "")).like(pattern),
-        ),
     ]
+    normalized = query.strip().lower() if query else ""
+    if normalized:
+        pattern = f"%{normalized}%"
+        search_text = (
+            func.coalesce(ProjectionResource.identifier, "")
+            + " "
+            + func.coalesce(ProjectionResource.display_label, "")
+        )
+        conditions.append(search_text.ilike(pattern))
     if module:
         conditions.append(ProjectionResource.module == module)
     if resource_type:
@@ -154,12 +233,16 @@ async def search_resources(
             ProjectionResource.occurred_at
             < datetime.combine(date_to + timedelta(days=1), datetime.min.time(), UTC)
         )
-    rank = case(
-        (func.lower(ProjectionResource.identifier) == normalized, 0),
-        (func.lower(ProjectionResource.identifier).like(f"{normalized}%"), 1),
-        (func.lower(ProjectionResource.identifier).like(pattern), 2),
-        else_=3,
-    ).label("rank")
+    rank = (
+        case(
+            (func.lower(ProjectionResource.identifier) == normalized, 0),
+            (func.lower(ProjectionResource.identifier).like(f"{normalized}%"), 1),
+            (func.lower(ProjectionResource.identifier).like(f"%{normalized}%"), 2),
+            else_=3,
+        ).label("rank")
+        if normalized
+        else literal(0).label("rank")
+    )
     total = int(
         await session.scalar(
             select(func.count()).select_from(ProjectionResource).where(*conditions)
@@ -254,6 +337,29 @@ async def list_reports(session: AsyncSession, user: UserContext) -> list[SavedRe
     return [report for report in rows.all() if report_visible(report, user)]
 
 
+async def list_report_runs(
+    session: AsyncSession, user: UserContext, limit: int
+) -> list[ReportRun]:
+    rows = await session.execute(
+        select(ReportRun, SavedReport)
+        .outerjoin(SavedReport, SavedReport.id == ReportRun.report_id)
+        .where(ReportRun.tenant_id == user.tenant_id)
+        .order_by(ReportRun.requested_at.desc())
+        .limit(limit * 4)
+    )
+    visible: list[ReportRun] = []
+    for run, report in rows.tuples().all():
+        if (
+            run.requested_by == user.id
+            or "insights.admin" in user.permissions
+            or (report is not None and report_visible(report, user, allow_admin=False))
+        ):
+            visible.append(run)
+            if len(visible) == limit:
+                break
+    return visible
+
+
 async def require_report(
     session: AsyncSession, user: UserContext, report_id: uuid.UUID
 ) -> SavedReport:
@@ -320,14 +426,16 @@ async def queue_report_run(
             expires_at=datetime.now(UTC) + timedelta(hours=settings.export_retention_hours),
         )
         session.add(artifact)
-    audit_and_outbox(
-        session,
-        user,
-        "report.run",
-        "insights.report_completed.v1",
-        "report_run",
-        run.id,
-        {"queued": True},
+    session.add(
+        AuditEvent(
+            tenant_id=user.tenant_id,
+            actor_user_id=user.id,
+            action="report.run",
+            entity_type="report_run",
+            entity_id=run.id,
+            request_id=current_request_id(),
+            payload={"queued": True, "export_requested": export_format is not None},
+        )
     )
     await session.commit()
     await session.refresh(run)
@@ -351,6 +459,18 @@ def report_query(report: SavedReport, tenant_id: uuid.UUID) -> Select[Any]:
     for key, column in mapping.items():
         if value := report.filters.get(key):
             conditions.append(column == value)
+    if value := report.filters.get("date_from"):
+        parsed = date.fromisoformat(str(value))
+        conditions.append(
+            ProjectionResource.occurred_at
+            >= datetime.combine(parsed, datetime.min.time(), UTC)
+        )
+    if value := report.filters.get("date_to"):
+        parsed = date.fromisoformat(str(value)) + timedelta(days=1)
+        conditions.append(
+            ProjectionResource.occurred_at
+            < datetime.combine(parsed, datetime.min.time(), UTC)
+        )
     statement = select(ProjectionResource).where(and_(*conditions))
     sort_mapping: dict[str, Any] = {
         "module": ProjectionResource.module,

@@ -84,18 +84,25 @@ def create_application() -> FastAPI:
         async with session_factory() as session:
             try:
                 checkpoint = await session.get(ProjectionCheckpoint, settings.consumer_group)
-                fresh = (
+                consumer_fresh = (
                     checkpoint is not None
-                    and checkpoint.last_processed_at is not None
-                    and checkpoint.last_processed_at
+                    and checkpoint.last_heartbeat_at is not None
+                    and checkpoint.last_heartbeat_at
                     >= datetime.now(UTC) - timedelta(seconds=settings.projection_stale_seconds)
                 )
-                components["consumer"] = "ready" if checkpoint else "starting"
-                components["projection_freshness"] = "ready" if fresh else "stale"
+                components["consumer"] = "ready" if consumer_fresh else "stale"
+                components["projection_freshness"] = "ready" if consumer_fresh else "stale"
             except Exception:
                 components["consumer"] = "unavailable"
                 components["projection_freshness"] = "unavailable"
-        unavailable = {"database", "redis", "platform_identity", "object_storage"}
+        unavailable = {
+            "database",
+            "redis",
+            "platform_identity",
+            "object_storage",
+            "consumer",
+            "projection_freshness",
+        }
         if any(components[name] != "ready" for name in unavailable):
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,

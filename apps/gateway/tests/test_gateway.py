@@ -136,8 +136,19 @@ async def test_local_login_proxy_csrf_request_id_and_logout(
             insights = await client.get("/api/v1/insights/dashboards/executive")
             assert insights.status_code == 200
             assert observed_headers[-1]["authorization"].startswith("Bearer eyJ")
+            insights_audit = await client.get("/api/v1/insights/audit")
+            assert insights_audit.status_code == 200
+            dead_letter_retry = await client.post(
+                "/api/v1/insights/admin/dead-letter/1-0/retry",
+                headers={"X-CSRF-Token": csrf},
+            )
+            assert dead_letter_retry.status_code == 200
             blocked_internal_insights = await client.get("/api/v1/insights/internal/backfill")
             assert blocked_internal_insights.status_code == 404
+            assert (await client.get("/api/v1/platform/search/legal?q=test")).status_code == 404
+            assert (
+                await client.get("/api/v1/platform/legal/analytics/dashboard")
+            ).status_code == 404
             report_without_csrf = await client.post("/api/v1/insights/reports", json={"name": "x"})
             assert report_without_csrf.status_code == 403
 

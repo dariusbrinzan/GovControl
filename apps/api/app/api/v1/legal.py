@@ -124,7 +124,12 @@ async def penalty_exposure(
         )
     except LegalResourceNotFoundError as exc:
         raise service_error(exc) from exc
-    return PenaltyExposureResponse(rule_id=rule.id, as_of_date=effective_date, amount=amount)
+    return PenaltyExposureResponse(
+        rule_id=rule.id,
+        as_of_date=effective_date,
+        amount=amount,
+        currency=rule.currency,
+    )
 
 
 @router.get("/cases", response_model=list[LegalCaseResponse])

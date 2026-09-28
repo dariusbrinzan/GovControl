@@ -159,6 +159,7 @@ class LegalService:
             "legal.enforcement.updated.v1",
             "EnforcementProceeding",
             item.id,
+            self._projection_payload(item),
         )
         await self.session.commit()
         await self.session.refresh(item)
@@ -317,6 +318,14 @@ class LegalService:
             entity_id=item.id,
             new_value={"old_status": old_status.value, "new_status": new_status.value},
         )
+        self._event(
+            tenant_id,
+            actor_id,
+            "legal.obligation.status-changed.v1",
+            "LegalObligation",
+            item.id,
+            self._projection_payload(item),
+        )
         await self.session.commit()
         await self.session.refresh(item)
         return item
@@ -339,11 +348,21 @@ class LegalService:
                 new_value=value,
             )
             event_type = {
+                "LegalCase": "legal.case.created.v1",
+                "CourtDecision": "legal.decision.created.v1",
+                "LegalObligation": "legal.obligation.created.v1",
                 "EnforcementProceeding": "legal.enforcement.updated.v1",
                 "PenaltyRule": "legal.penalty.exposure.v1",
             }.get(entity_type)
             if event_type is not None:
-                self._event(tenant_id, actor_id, event_type, entity_type, item.id)
+                self._event(
+                    tenant_id,
+                    actor_id,
+                    event_type,
+                    entity_type,
+                    item.id,
+                    self._projection_payload(item),
+                )
             await self.session.commit()
         except IntegrityError as exc:
             await self.session.rollback()
@@ -358,6 +377,7 @@ class LegalService:
         event_type: str,
         aggregate_type: str,
         aggregate_id: uuid.UUID,
+        projection_payload: dict[str, str | int | bool | None] | None = None,
     ) -> None:
         self.session.add(
             IntegrationOutboxEvent(
@@ -365,6 +385,75 @@ class LegalService:
                 event_type=event_type,
                 aggregate_type=aggregate_type,
                 aggregate_id=aggregate_id,
-                payload={"recipient_user_id": str(actor_id)},
+                payload={
+                    "recipient_user_id": str(actor_id),
+                    **(projection_payload or {}),
+                },
             )
         )
+
+    @staticmethod
+    def _projection_payload(
+        item: LegalCase | CourtDecision | LegalObligation | EnforcementProceeding | PenaltyRule,
+    ) -> dict[str, str | int | bool | None]:
+        if isinstance(item, LegalCase):
+            return {
+                "identifier": item.case_number,
+                "display_label": item.court,
+                "status": item.status.value,
+                "occurred_at": str(item.filing_date) if item.filing_date else None,
+                "source_url": f"/legal/cases/{item.id}",
+                "version": 1,
+            }
+        if isinstance(item, CourtDecision):
+            return {
+                "identifier": item.decision_number,
+                "display_label": item.decision_type,
+                "occurred_at": str(item.decision_date),
+                "source_url": f"/legal/decisions/{item.id}",
+                "version": 1,
+            }
+        if isinstance(item, LegalObligation):
+            return {
+                "identifier": f"OBL-{str(item.id)[:8].upper()}",
+                "display_label": item.obligation_type.value,
+                "status": item.status.value,
+                "department_id": str(item.responsible_department_id)
+                if item.responsible_department_id
+                else None,
+                "responsible_user_id": str(item.responsible_user_id)
+                if item.responsible_user_id
+                else None,
+                "due_at": str(item.due_date) if item.due_date else None,
+                "source_url": f"/legal/obligations/{item.id}",
+                "version": 1,
+            }
+        if isinstance(item, EnforcementProceeding):
+            return {
+                "identifier": item.file_number,
+                "display_label": "Procedură de executare",
+                "status": item.status.value,
+                "occurred_at": str(item.start_date),
+                "source_url": f"/legal/enforcements/{item.id}",
+                "version": 1,
+            }
+        return {
+            "identifier": f"PEN-{str(item.id)[:8].upper()}",
+            "display_label": item.calculation_type,
+            "occurred_at": str(item.start_date),
+            "due_at": str(item.end_date) if item.end_date else None,
+            "amount": str(
+                calculate_penalty_exposure(
+                    calculation_type=PenaltyCalculationType(item.calculation_type),
+                    start_date=item.start_date,
+                    as_of_date=date.today(),
+                    daily_amount=item.daily_amount,
+                    percentage=item.percentage,
+                    base_value=item.base_value,
+                    end_date=item.end_date,
+                )
+            ),
+            "currency": item.currency,
+            "source_url": f"/legal/penalties/{item.id}",
+            "version": 1,
+        }

@@ -4,6 +4,7 @@ from decimal import Decimal
 from enum import StrEnum
 
 from sqlalchemy import (
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
@@ -206,6 +207,7 @@ class PenaltyRule(Base):
     __tablename__ = "penalty_rules"
     __table_args__ = (
         Index("ix_penalty_rules_tenant_start_date", "tenant_id", "start_date"),
+        CheckConstraint("currency ~ '^[A-Z]{3}$'", name="ck_penalty_rules_currency_iso"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -219,5 +221,8 @@ class PenaltyRule(Base):
     daily_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     percentage: Mapped[Decimal | None] = mapped_column(Numeric(8, 4), nullable=True)
     base_value: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    currency: Mapped[str] = mapped_column(
+        String(3), nullable=False, default="RON", server_default="RON"
+    )
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date | None] = mapped_column(Date, nullable=True)

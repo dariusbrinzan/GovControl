@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.models.legal import EnforcementStatus, LegalCaseStatus, ObligationStatus, ObligationType
 from app.services.penalties import PenaltyCalculationType
@@ -112,6 +112,7 @@ class PenaltyRuleCreate(BaseModel):
     daily_amount: Decimal | None = None
     percentage: Decimal | None = None
     base_value: Decimal | None = None
+    currency: str = Field(default="RON", pattern=r"^[A-Z]{3}$")
     start_date: date
     end_date: date | None = None
 
@@ -143,6 +144,7 @@ class PenaltyRuleResponse(BaseModel):
     daily_amount: Decimal | None
     percentage: Decimal | None
     base_value: Decimal | None
+    currency: str
     start_date: date
     end_date: date | None
 
@@ -151,3 +153,4 @@ class PenaltyExposureResponse(BaseModel):
     rule_id: uuid.UUID
     as_of_date: date
     amount: Decimal
+    currency: str

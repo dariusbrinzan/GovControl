@@ -1,7 +1,8 @@
-.PHONY: api-check api-dev api-test contracts-check contracts-dev contracts-migrate contracts-seed contracts-test contracts-worker db-migrate db-up db-down db-logs db-seed db-status documents-backfill documents-check documents-clean-e2e documents-dev documents-export-legacy documents-migrate documents-test documents-worker gateway-check gateway-dev gateway-test insights-check insights-dev insights-migrate insights-test insights-worker notifications-backfill notifications-check notifications-clean-e2e notifications-dev notifications-export-legacy notifications-migrate notifications-scheduler notifications-test notifications-test-integration notifications-worker platform-up stack-check stack-down stack-logs stack-status stack-up stack-up-debug web-build web-check web-dev web-test web-test-e2e web-test-e2e-live
+.PHONY: api-check api-dev api-test contracts-check contracts-dev contracts-migrate contracts-seed contracts-test contracts-worker db-migrate db-up db-down db-logs db-seed db-status documents-backfill documents-check documents-clean-e2e documents-dev documents-export-legacy documents-migrate documents-test documents-worker gateway-check gateway-dev gateway-test insights-backfill insights-check insights-clean-e2e insights-dev insights-export-snapshots insights-migrate insights-rebuild insights-test insights-worker notifications-backfill notifications-check notifications-clean-e2e notifications-dev notifications-export-legacy notifications-migrate notifications-scheduler notifications-test notifications-test-integration notifications-worker platform-up stack-check stack-down stack-logs stack-status stack-up stack-up-debug web-build web-check web-dev web-test web-test-e2e web-test-e2e-live
 
 DOCUMENT_EXPORT_DIR ?= /tmp/govcontrol-documents-export
 NOTIFICATION_EXPORT_DIR ?= /tmp/govcontrol-notifications-export
+INSIGHTS_SNAPSHOT_DIR ?= /tmp/govcontrol-insights-snapshots
 
 api-dev:
 	cd apps/api && uv run uvicorn app.main:app --reload
@@ -111,6 +112,30 @@ insights-migrate:
 insights-worker:
 	cd apps/insights-api && uv run python -m insights_app.worker
 
+insights-export-snapshots:
+	mkdir -p "$(INSIGHTS_SNAPSHOT_DIR)"
+	cd apps/api && uv run python -m app.scripts.export_insights_snapshot --output "$(INSIGHTS_SNAPSHOT_DIR)/platform.json"
+	cd apps/contracts-api && uv run python -m contracts_app.export_insights --output "$(INSIGHTS_SNAPSHOT_DIR)/contracts.json"
+	cd apps/documents-api && uv run python -m documents_app.export_insights --output "$(INSIGHTS_SNAPSHOT_DIR)/documents.json"
+	cd apps/notifications-api && uv run python -m notifications_app.export_insights --output "$(INSIGHTS_SNAPSHOT_DIR)/notifications.json"
+
+insights-backfill:
+	cd apps/insights-api && uv run python -m insights_app.backfill \
+		--input "$(INSIGHTS_SNAPSHOT_DIR)/platform.json" \
+		--input "$(INSIGHTS_SNAPSHOT_DIR)/contracts.json" \
+		--input "$(INSIGHTS_SNAPSHOT_DIR)/documents.json" \
+		--input "$(INSIGHTS_SNAPSHOT_DIR)/notifications.json"
+
+insights-rebuild:
+	cd apps/insights-api && uv run python -m insights_app.backfill --rebuild \
+		--input "$(INSIGHTS_SNAPSHOT_DIR)/platform.json" \
+		--input "$(INSIGHTS_SNAPSHOT_DIR)/contracts.json" \
+		--input "$(INSIGHTS_SNAPSHOT_DIR)/documents.json" \
+		--input "$(INSIGHTS_SNAPSHOT_DIR)/notifications.json"
+
+insights-clean-e2e:
+	cd apps/insights-api && uv run python -m insights_app.cleanup_e2e
+
 web-dev:
 	cd apps/web && npm run dev
 
@@ -127,7 +152,7 @@ web-test-e2e:
 	cd apps/web && npm run test:e2e
 
 web-test-e2e-live:
-	set -a; . ./.env; set +a; trap 'cd "$(CURDIR)" && make notifications-clean-e2e; cd "$(CURDIR)/apps/documents-api" && uv run python -m documents_app.cleanup_e2e' EXIT; make notifications-clean-e2e; cd apps/documents-api && uv run python -m documents_app.cleanup_e2e; cd ../web && npm run test:e2e -- live-contracts.spec.ts live-documents.spec.ts live-legal.spec.ts live-notifications.spec.ts --workers=1
+	set -a; . ./.env; set +a; trap 'cd "$(CURDIR)" && make notifications-clean-e2e insights-clean-e2e; cd "$(CURDIR)/apps/documents-api" && uv run python -m documents_app.cleanup_e2e' EXIT; make notifications-clean-e2e insights-clean-e2e; cd apps/documents-api && uv run python -m documents_app.cleanup_e2e; cd ../web && npm run test:e2e -- live-contracts.spec.ts live-documents.spec.ts live-insights.spec.ts live-legal.spec.ts live-notifications.spec.ts --workers=1
 
 db-migrate:
 	cd apps/api && uv run alembic upgrade head

@@ -31,8 +31,8 @@ def test_projection_accepts_only_controlled_metadata() -> None:
     assert projection is not None
     assert projection["currency"] == "RON"
     assert str(projection["amount"]) == "123.45"
-    assert "document_content" not in projection["attributes"]
-    assert "access_token" not in projection["attributes"]
+    assert "document_content" not in projection.get("attributes", {})
+    assert "access_token" not in projection.get("attributes", {})
     assert projection["source_url"].startswith("/contracts/")
 
 
@@ -47,3 +47,24 @@ def test_invalid_currency_is_not_aggregated() -> None:
     projection = controlled_projection(envelope(amount="100", currency="EURO"))
     assert projection is not None
     assert projection["currency"] is None
+
+
+def test_existing_contract_event_aliases_are_normalized() -> None:
+    event = envelope(contract_number="CTR-7", new_status="ACTIVE")
+    event.aggregate_type = "Contract"
+    projection = controlled_projection(event)
+    assert projection is not None
+    assert projection["resource_type"] == "contract"
+    assert projection["identifier"] == "CTR-7"
+    assert projection["status"] == "ACTIVE"
+
+
+def test_legal_class_names_are_normalized() -> None:
+    event = envelope(identifier="DOS-1")
+    event.type = "legal.case.updated.v1"
+    event.aggregate_type = "LegalCase"
+    projection = controlled_projection(event)
+    assert projection is not None
+    assert projection["module"] == "legal"
+    assert projection["resource_type"] == "case"
+    assert projection["source_url"].startswith("/legal/cases/")

@@ -1,15 +1,15 @@
 """Add GovInsights permissions and default system-role grants.
 
-Revision ID: 20260926_0013
-Revises: 20260926_0012
+Revision ID: 20260927_0014
+Revises: 20260926_0013
 """
 
 from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "20260926_0013"
-down_revision: str | None = "20260926_0012"
+revision: str = "20260927_0014"
+down_revision: str | None = "20260926_0013"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

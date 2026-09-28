@@ -27,6 +27,9 @@ ALLOWED_METADATA = frozenset(
         "delivery_status",
         "processing_status",
         "notification_status",
+        "resource_type",
+        "source_id",
+        "source_url",
     }
 )
 MODULE_PREFIXES = {
@@ -53,6 +56,22 @@ RESOURCE_PATHS = {
     "notification": "/legal/notifications",
     "user": "/platform/users/{id}",
     "department": "/platform/departments/{id}",
+}
+RESOURCE_TYPES = {
+    "legalcase": "case",
+    "courtdecision": "decision",
+    "legalobligation": "obligation",
+    "enforcementproceeding": "enforcement",
+    "penaltyrule": "penalty",
+    "contract": "contract",
+    "contractmilestone": "milestone",
+    "contractobligation": "contract_obligation",
+    "contractpayment": "payment",
+    "document": "document",
+    "notification": "notification",
+    "deliveryattempt": "notification_delivery",
+    "user": "user",
+    "department": "department",
 }
 
 
@@ -96,8 +115,23 @@ def controlled_projection(event: EventEnvelope) -> dict[str, Any] | None:
     if module is None:
         return None
     metadata = {key: value for key, value in event.payload.items() if key in ALLOWED_METADATA}
-    resource_type = event.aggregate_type.lower().removesuffix("s")
-    source_url = RESOURCE_PATHS.get(resource_type, f"/{module}").format(id=event.aggregate_id)
+    raw_resource_type = event.aggregate_type.lower().replace("_", "").removesuffix("s")
+    resource_type = str(metadata.get("resource_type") or "").lower() or RESOURCE_TYPES.get(
+        raw_resource_type, raw_resource_type
+    )
+    source_id = _uuid(metadata.get("source_id")) or event.aggregate_id
+    source_url = str(
+        metadata.get("source_url")
+        or RESOURCE_PATHS.get(resource_type, f"/{module}").format(id=source_id)
+    )
+    identifier = metadata.get("identifier") or event.payload.get("contract_number")
+    status = (
+        metadata.get("status")
+        or event.payload.get("new_status")
+        or metadata.get("processing_status")
+        or metadata.get("delivery_status")
+        or metadata.get("notification_status")
+    )
     currency = metadata.get("currency")
     if currency is not None:
         currency = str(currency).upper()
@@ -120,27 +154,50 @@ def controlled_projection(event: EventEnvelope) -> dict[str, Any] | None:
         "currency",
         "version",
         "deleted",
+        "resource_type",
+        "source_id",
+        "source_url",
     }
-    return {
+    result: dict[str, Any] = {
         "module": module,
         "resource_type": resource_type,
-        "identifier": str(metadata["identifier"])[:255] if metadata.get("identifier") else None,
+        "occurred_at": _datetime(metadata.get("occurred_at")) or event.occurred_at,
+        "source_url": source_url,
+        "source_version": version,
+        "source_event_at": event.occurred_at,
+    }
+    optional = {
+        "identifier": str(identifier)[:255] if identifier else None,
         "display_label": str(metadata["display_label"])[:500]
         if metadata.get("display_label")
         else None,
-        "status": str(metadata["status"])[:80] if metadata.get("status") else None,
+        "status": str(status)[:80] if status else None,
         "department_id": _uuid(metadata.get("department_id")),
         "responsible_user_id": _uuid(metadata.get("responsible_user_id")),
-        "occurred_at": _datetime(metadata.get("occurred_at")) or event.occurred_at,
         "due_at": _datetime(metadata.get("due_at")),
         "amount": _amount(metadata.get("amount")),
         "currency": currency,
-        "source_url": source_url,
-        "attributes": {key: value for key, value in metadata.items() if key not in reserved},
-        "source_version": version,
-        "source_event_at": event.occurred_at,
-        "deleted": bool(metadata.get("deleted", False)) or event.type.endswith(".deleted.v1"),
     }
+    presence = {
+        "identifier": identifier is not None,
+        "display_label": "display_label" in metadata,
+        "status": status is not None,
+        "department_id": "department_id" in metadata,
+        "responsible_user_id": "responsible_user_id" in metadata,
+        "due_at": "due_at" in metadata,
+        "amount": "amount" in metadata,
+        "currency": "currency" in metadata,
+    }
+    result.update({key: value for key, value in optional.items() if presence[key]})
+    attributes = {key: value for key, value in metadata.items() if key not in reserved}
+    if attributes:
+        result["attributes"] = attributes
+    if "deleted" in metadata or event.type.endswith(".deleted.v1"):
+        result["deleted"] = bool(metadata.get("deleted", False)) or event.type.endswith(
+            ".deleted.v1"
+        )
+    result["source_id"] = source_id
+    return result
 
 
 async def apply_event(
@@ -155,7 +212,7 @@ async def apply_event(
                 ProjectionResource.tenant_id == event.tenant_id,
                 ProjectionResource.module == values["module"],
                 ProjectionResource.resource_type == values["resource_type"],
-                ProjectionResource.source_id == event.aggregate_id,
+                ProjectionResource.source_id == values["source_id"],
             )
         )
         should_apply = existing is None or (
@@ -169,11 +226,12 @@ async def apply_event(
             if existing is None:
                 existing = ProjectionResource(
                     tenant_id=event.tenant_id,
-                    source_id=event.aggregate_id,
+                    source_id=values.pop("source_id"),
                     **values,
                 )
                 session.add(existing)
             else:
+                values.pop("source_id", None)
                 for key, value in values.items():
                     setattr(existing, key, value)
     session.add(
@@ -186,11 +244,13 @@ async def apply_event(
     )
     checkpoint = await session.get(ProjectionCheckpoint, consumer_group)
     if checkpoint is None:
+        processed_at = datetime.now(UTC)
         checkpoint = ProjectionCheckpoint(
             consumer=consumer_group,
             last_stream_id=stream_id,
             last_event_at=event.occurred_at,
-            last_processed_at=datetime.now(UTC),
+            last_processed_at=processed_at,
+            last_heartbeat_at=processed_at,
             processed_count=1,
             failed_count=0,
             projection_version=1 if values is not None else 0,
@@ -200,6 +260,7 @@ async def apply_event(
         checkpoint.last_stream_id = stream_id
         checkpoint.last_event_at = event.occurred_at
         checkpoint.last_processed_at = datetime.now(UTC)
+        checkpoint.last_heartbeat_at = checkpoint.last_processed_at
         checkpoint.processed_count += 1
         if values is not None:
             checkpoint.projection_version += 1

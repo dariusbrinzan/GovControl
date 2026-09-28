@@ -10,6 +10,7 @@ export {
   ChevronRight,
   CircleDollarSign,
   ClipboardCheck,
+  Database,
   FileCheck2,
   FileClock,
   Files,

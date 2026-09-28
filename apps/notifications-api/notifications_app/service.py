@@ -137,18 +137,33 @@ class NotificationService:
         recipient.status = status
         recipient.read_at = now if status == NotificationStatus.READ else None
         recipient.archived_at = now if status == NotificationStatus.ARCHIVED else None
-        action = audit_action or {
-            NotificationStatus.READ: "READ",
-            NotificationStatus.UNREAD: "UNREAD",
-            NotificationStatus.ARCHIVED: "ARCHIVED",
-        }[status]
+        action = (
+            audit_action
+            or {
+                NotificationStatus.READ: "READ",
+                NotificationStatus.UNREAD: "UNREAD",
+                NotificationStatus.ARCHIVED: "ARCHIVED",
+            }[status]
+        )
         self._audit(tenant_id, user_id, notification_id, action)
         if status in {NotificationStatus.READ, NotificationStatus.ARCHIVED}:
             self._outbox(
                 tenant_id,
                 notification_id,
                 f"notification.{status.value.lower()}.v1",
-                {"notification_id": str(notification_id), "recipient_user_id": str(user_id)},
+                {
+                    "notification_id": str(notification_id),
+                    "recipient_user_id": str(user_id),
+                    "resource_type": "notification_recipient",
+                    "source_id": str(recipient.id),
+                    "identifier": f"NRC-{str(recipient.id)[:8].upper()}",
+                    "display_label": "Stare notificare",
+                    "status": status.value,
+                    "responsible_user_id": str(user_id),
+                    "occurred_at": recipient.created_at.isoformat(),
+                    "source_url": "/legal/notifications",
+                    "version": 1,
+                },
             )
         await self.session.commit()
         return self._item(notification, recipient)
@@ -164,9 +179,28 @@ class NotificationService:
             .values(status=NotificationStatus.READ, read_at=datetime.now(UTC))
             .returning(NotificationRecipient.id)
         )
-        count = len(result.all())
+        recipient_ids = list(result.all())
+        count = len(recipient_ids)
         if count:
             self._audit(tenant_id, user_id, None, "MARK_ALL_READ", {"count": count})
+            for recipient_id in recipient_ids:
+                self._outbox(
+                    tenant_id,
+                    recipient_id,
+                    "notification.read.v1",
+                    {
+                        "recipient_user_id": str(user_id),
+                        "resource_type": "notification_recipient",
+                        "source_id": str(recipient_id),
+                        "identifier": f"NRC-{str(recipient_id)[:8].upper()}",
+                        "display_label": "Stare notificare",
+                        "status": "READ",
+                        "responsible_user_id": str(user_id),
+                        "occurred_at": datetime.now(UTC).isoformat(),
+                        "source_url": "/legal/notifications",
+                        "version": 1,
+                    },
+                )
         await self.session.commit()
         return count
 
@@ -383,9 +417,7 @@ class NotificationService:
             )
         self._audit(value.tenant_id, None, notification.id, "CREATED")
         if in_app_enabled:
-            self._audit(
-                value.tenant_id, None, notification.id, "DELIVERED", {"channel": "IN_APP"}
-            )
+            self._audit(value.tenant_id, None, notification.id, "DELIVERED", {"channel": "IN_APP"})
         else:
             self._audit(
                 value.tenant_id,
@@ -402,6 +434,15 @@ class NotificationService:
                 "notification_id": str(notification.id),
                 "recipient_user_id": str(value.recipient_user_id),
                 "category": notification.category,
+                "identifier": f"NTF-{str(notification.id)[:8].upper()}",
+                "display_label": notification.category,
+                "status": "CREATED",
+                "responsible_user_id": str(value.recipient_user_id),
+                "occurred_at": notification.created_at.isoformat(),
+                "due_at": notification.expires_at.isoformat() if notification.expires_at else None,
+                "source_url": "/legal/notifications",
+                "notification_status": "CREATED",
+                "version": 1,
             },
         )
         if in_app_enabled:
@@ -409,15 +450,20 @@ class NotificationService:
                 value.tenant_id,
                 notification.id,
                 "notification.delivery_succeeded.v1",
-                {"notification_id": str(notification.id), "channel": "IN_APP"},
+                {
+                    "notification_id": str(notification.id),
+                    "channel": "IN_APP",
+                    "status": "DELIVERED",
+                    "delivery_status": "DELIVERED",
+                    "source_url": "/legal/notifications",
+                    "version": 1,
+                },
             )
         await self.session.commit()
         await self.session.refresh(notification)
         return notification, True
 
-    async def schedule(
-        self, value: InternalScheduleCreate
-    ) -> tuple[NotificationSchedule, bool]:
+    async def schedule(self, value: InternalScheduleCreate) -> tuple[NotificationSchedule, bool]:
         statement = (
             insert(NotificationSchedule)
             .values(**value.model_dump())
